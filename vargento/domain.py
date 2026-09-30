@@ -86,7 +86,7 @@ PLAY_TYPES: dict[str, PlayType] = {
         PlayType(
             "penal",
             "Penal por falta",
-            "¿Cobrar penal?",
+            "¿Es penal?",
             (
                 DECISION_CAMPO,
                 Feature("intensidad_contacto", "Intensidad del contacto", "scale", 0, 3, 2.0, options=INTENSIDAD),
@@ -99,7 +99,7 @@ PLAY_TYPES: dict[str, PlayType] = {
         PlayType(
             "mano",
             "Mano en el área",
-            "¿Cobrar mano?",
+            "¿Es mano?",
             (
                 DECISION_CAMPO,
                 Feature("brazo_antinatural", "Brazo en posición antinatural (agranda el cuerpo)", "bool", weight=2.5),
@@ -112,7 +112,7 @@ PLAY_TYPES: dict[str, PlayType] = {
         PlayType(
             "offside",
             "Fuera de juego",
-            "¿Cobrar offside?",
+            "¿Es offside?",
             (
                 DECISION_CAMPO,
                 Feature(
@@ -131,7 +131,7 @@ PLAY_TYPES: dict[str, PlayType] = {
         PlayType(
             "roja",
             "Roja directa",
-            "¿Mostrar roja?",
+            "¿Es roja?",
             (
                 DECISION_CAMPO,
                 Feature("intensidad", "Intensidad / fuerza excesiva", "scale", 0, 3, 2.5, options=INTENSIDAD),

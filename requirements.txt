@@ -1,2 +1,2 @@
-fastapi>=0.110
+fastapi>=0.115  # Starlette con soporte de Range para videos
 uvicorn>=0.29
