@@ -11,18 +11,20 @@ import time
 from datetime import datetime, timedelta, timezone
 
 ROLES = {
+    "periodista": "Periodista",
+    "editor": "Editor",
     "admin": "Administrador",
-    "analista": "Analista",
-    "operador": "Operador VAR",
-    "arbitro": "Árbitro",
 }
+
+# Roles de versiones anteriores (pensadas para árbitros) y su equivalente actual.
+LEGACY_ROLES = {"arbitro": "periodista", "operador": "periodista", "analista": "editor"}
 
 # Qué puede hacer cada rol.
 PERMISSIONS = {
-    "predict": {"admin", "analista", "operador", "arbitro"},  # consultar probabilidad
-    "decide": {"admin", "operador", "arbitro"},  # registrar la decisión final
-    "view": {"admin", "analista", "operador", "arbitro"},  # historial y métricas
-    "manage_data": {"admin", "analista"},  # árbitros, importar, recalibrar
+    "predict": {"admin", "editor", "periodista"},  # analizar una jugada
+    "decide": {"admin", "editor", "periodista"},  # registrar qué cobró el árbitro
+    "view": {"admin", "editor", "periodista"},  # historial y métricas
+    "manage_data": {"admin", "editor"},  # árbitros, importar, videos del archivo, recalibrar
     "manage_users": {"admin"},
 }
 

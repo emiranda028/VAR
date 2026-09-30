@@ -150,7 +150,8 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--doubt
 /* --- resultado estilo gráfico de TV --- */
 .empty { color: var(--muted); padding: 40px 0; text-align: center; }
 .question { color: var(--muted); font-size: 15px; }
-.verdict-bar { display: flex; align-items: stretch; margin: 8px 0 14px; max-width: 100%; }
+.verdict-bar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px 0; margin: 8px 0 14px; max-width: 100%; }
+.verdict-bar .share { margin-left: auto; align-self: center; }
 .verdict {
   min-width: 0;
   font: 800 clamp(34px, 9vw, 52px)/1 var(--display); text-transform: uppercase; letter-spacing: 1px;

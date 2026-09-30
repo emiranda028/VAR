@@ -88,6 +88,14 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(SCHEMA)
+        self._migrate_roles()
+
+    def _migrate_roles(self) -> None:
+        from .auth import LEGACY_ROLES
+
+        with self._lock, self._conn:
+            for old, new in LEGACY_ROLES.items():
+                self._conn.execute("UPDATE users SET role = ?, referee_id = NULL WHERE role = ?", (new, old))
 
     def close(self) -> None:
         self._conn.close()

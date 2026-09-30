@@ -1,11 +1,12 @@
 # VARgento
 
-Cuando el árbitro va a revisar una jugada al monitor del VAR, VARgento le da la
-**probabilidad de cobrar (SÍ) o no cobrar (NO)**. El cálculo se basa en jugadas
-similares del histórico y en cómo **ese mismo árbitro** resolvió jugadas
-comparables.
+Herramienta para periodistas deportivos: ante una jugada polémica, VARgento da la
+**probabilidad de que se cobre (SÍ) o no (NO)**, basada en jugadas similares del
+archivo y en cómo **el árbitro del partido** resolvió jugadas comparables. Muestra
+las jugadas parecidas con sus videos para compararlas lado a lado y genera una
+**placa** lista para redes o notas.
 
-> Es una herramienta de apoyo: la decisión es siempre del árbitro. Los datos que
+> Es una estimación estadística: no reemplaza el criterio arbitral. Los datos que
 > trae la app son **sintéticos** (árbitros y partidos ficticios), sólo para demo.
 
 ## Cómo arrancar
@@ -32,25 +33,29 @@ Variables de entorno:
 
 | Rol | Puede |
 | --- | --- |
-| Árbitro | Consultar la probabilidad y registrar la decisión final. Si está vinculado a un árbitro, sólo sobre sus propias jugadas. |
-| Operador VAR | Consultar la probabilidad y registrar la decisión final de cualquier árbitro. |
-| Analista | Consultar, ver el historial, importar datos, gestionar árbitros y recalibrar el modelo. |
+| Periodista | Analizar jugadas, subir videos/fotos, descargar la placa y registrar lo que cobró el árbitro. |
+| Editor | Todo lo anterior, más importar datos, gestionar árbitros, agregar videos a jugadas del archivo y recalibrar el modelo. |
 | Administrador | Todo lo anterior y gestionar usuarios. |
+
+Los usuarios creados con roles de versiones anteriores (árbitro, operador VAR,
+analista) se convierten solos: los dos primeros en periodista y analista en editor.
 
 Las contraseñas se guardan con scrypt, las sesiones duran 12 horas y un usuario
 se bloquea 5 minutos tras 5 intentos fallidos. Si se pierde la clave del admin:
 
 ```bash
-python -m vargento.users clave admin      # también: crear USUARIO ROL, listar
+python -m vargento.users clave admin      # también: crear USUARIO periodista|editor|admin, listar
 ```
 
 ## Flujo de uso
 
-1. **Revisión**: el árbitro carga la jugada y ve la probabilidad SÍ/NO.
-2. **Decisión final**: debajo del resultado toca "Se cobró" o "No se cobró". La
-   jugada pasa al histórico, así el modelo aprende de cada revisión.
-3. **Historial**: muestra las revisiones y qué tan seguido la sugerencia coincidió
-   con la decisión final.
+1. **Análisis**: se cargan los atributos de la jugada (y su video o foto) y se ve
+   la probabilidad SÍ/NO: **SE COBRA**, **NO SE COBRA** o **DIVIDIDA**.
+2. **Placa**: "Descargar placa" genera una imagen 1200×675 con el resultado, para
+   redes, TV o la nota.
+3. **¿Qué cobró el árbitro?**: cuando se conoce la decisión real, se registra con
+   "Lo cobró" / "No lo cobró". La jugada pasa al archivo y el modelo aprende.
+4. **Historial**: muestra los análisis y qué tan seguido acertó VARgento.
 
 ## Videos y fotos
 
@@ -61,7 +66,7 @@ python -m vargento.users clave admin      # también: crear USUARIO ROL, listar
 - **Comparar**: tocando cualquier jugada parecida se abre una vista lado a lado
   con los dos videos y la tabla de atributos, resaltando lo que cambia.
 - **Histórico**: al registrar la decisión final, el video pasa con la jugada al
-  histórico. Los analistas pueden agregar videos a jugadas viejas desde la
+  histórico. Los editores pueden agregar videos a jugadas viejas desde la
   comparación, o en el CSV con las columnas `video` y `video_inicio`.
 - Los archivos se guardan en la carpeta `media/` (o `VARGENTO_MEDIA_DIR`) y sólo
   los ven usuarios con sesión iniciada.
@@ -122,7 +127,7 @@ indica cuánto importan al comparar jugadas:
    probabilidad general. Con pocas jugadas del árbitro, casi no mueve el
    resultado.
 
-El resultado es **COBRAR** (≥ 60%), **NO COBRAR** (≤ 40%) o **DUDOSA**, con un
+El resultado es **SE COBRA** (≥ 60%), **NO SE COBRA** (≤ 40%) o **DIVIDIDA**, con un
 nivel de confianza según cuánta evidencia hay. La pantalla muestra las jugadas
 parecidas que respaldan el número, para que el árbitro pueda verlas.
 

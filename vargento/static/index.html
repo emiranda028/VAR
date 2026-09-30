@@ -14,7 +14,7 @@
   <main id="login-view" class="login" hidden>
     <form id="login-form" class="panel login-card">
       <div class="brand"><span class="logo">VAR</span>gento</div>
-      <p class="sub">¿Se cobra o no se cobra? La probabilidad, con jugadas parecidas para comparar.</p>
+      <p class="sub">Jugadas polémicas con datos: ¿se cobra o no se cobra? La probabilidad, el criterio del árbitro y las jugadas parecidas para comparar.</p>
       <label class="field"><span>Usuario</span><input id="login-user" autocomplete="username" required></label>
       <label class="field"><span>Contraseña</span><input id="login-pass" type="password" autocomplete="current-password" required></label>
       <div id="login-error" class="error" role="alert"></div>
@@ -37,13 +37,13 @@
       <nav class="tabs" id="tabs" role="tablist"></nav>
     </div></header>
 
-    <!-- Revisión -->
-    <main class="layout" id="tab-review" data-tab="Revisión" data-perm="predict">
+    <!-- Análisis -->
+    <main class="layout" id="tab-review" data-tab="Análisis" data-perm="predict">
       <section class="panel" aria-labelledby="form-title">
-        <h2 id="form-title">Jugada en revisión</h2>
+        <h2 id="form-title">Jugada a analizar</h2>
         <form id="play-form">
           <label class="field">
-            <span>Árbitro</span>
+            <span>Árbitro del partido</span>
             <select id="referee"></select>
           </label>
           <div class="field">
@@ -72,6 +72,7 @@
           <div class="verdict-bar">
             <div class="verdict" id="verdict"></div>
             <div class="verdict-tag">VAR</div>
+            <button type="button" class="secondary share" id="btn-card" title="Imagen 1200×675 para redes o notas">Descargar placa</button>
           </div>
           <div class="bar-labels">
             <span class="si">Sí <b id="p-yes"></b></span>
@@ -84,12 +85,13 @@
           <div class="confidence" id="confidence"></div>
 
           <div class="my-play">
-            <h3>La jugada en revisión</h3>
+            <h3>La jugada</h3>
             <div id="my-media"></div>
           </div>
 
           <div class="decision" id="decision" hidden>
-            <h3>Decisión final</h3>
+            <h3>¿Qué cobró el árbitro?</h3>
+            <p class="hint">Cuando se conozca la decisión real, registrala: la jugada pasa al archivo y VARgento aprende.</p>
             <div id="decision-form">
               <label class="field" id="decision-ref-field" hidden>
                 <span>¿Qué árbitro decidió?</span>
@@ -101,8 +103,8 @@
               </div>
               <label class="field"><span>Descripción (opcional)</span><input id="decision-desc" maxlength="500"></label>
               <div class="decision-buttons">
-                <button type="button" class="yes-btn" data-called="true">Se cobró</button>
-                <button type="button" class="no-btn" data-called="false">No se cobró</button>
+                <button type="button" class="yes-btn" data-called="true">Lo cobró</button>
+                <button type="button" class="no-btn" data-called="false">No lo cobró</button>
               </div>
             </div>
             <div id="decision-done" class="notice" hidden></div>
@@ -127,13 +129,13 @@
     <!-- Historial -->
     <main class="page" id="tab-history" data-tab="Historial" data-perm="view" hidden>
       <section class="panel">
-        <h2>Rendimiento en revisiones reales</h2>
+        <h2>¿Acertó VARgento?</h2>
         <div class="stats" id="review-stats"></div>
       </section>
       <section class="panel">
-        <h2>Últimas revisiones</h2>
+        <h2>Últimos análisis</h2>
         <div class="table-wrap"><table class="table" id="reviews-table">
-          <thead><tr><th>Fecha</th><th>Árbitro</th><th>Tipo</th><th>Prob. SÍ</th><th>Sugerencia</th><th>Decisión final</th><th>Usuario</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Árbitro</th><th>Tipo</th><th>Prob. SÍ</th><th>VARgento</th><th>Cobró el árbitro</th><th>Usuario</th></tr></thead>
           <tbody></tbody>
         </table></div>
       </section>
@@ -188,23 +190,22 @@
           <input id="new-user-name" placeholder="usuario" required minlength="3" maxlength="64" pattern="[A-Za-z0-9_.\-]+" autocomplete="off">
           <input id="new-user-pass" type="password" placeholder="contraseña (mín. 8)" required minlength="8" autocomplete="new-password">
           <select id="new-user-role"></select>
-          <select id="new-user-ref"></select>
           <button type="submit" class="primary inline">Crear</button>
         </form>
-        <p class="hint">Árbitro: sólo consulta y registra sus propias jugadas si está vinculado. Operador VAR: consulta y registra decisiones.
-          Analista: importa datos, gestiona árbitros y recalibra. Administrador: todo, incluidos los usuarios.</p>
+        <p class="hint">Periodista: analiza jugadas, sube videos y registra lo que cobró el árbitro.
+          Editor: además carga datos, gestiona árbitros, agrega videos al archivo y recalibra el modelo. Administrador: todo, incluidos los usuarios.</p>
       </section>
       <section class="panel">
         <h2>Usuarios</h2>
         <div class="table-wrap"><table class="table" id="users-table">
-          <thead><tr><th>Usuario</th><th>Rol</th><th>Árbitro vinculado</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
           <tbody></tbody>
         </table></div>
       </section>
     </main>
 
     <footer class="foot">
-      Herramienta de apoyo: la decisión es siempre del árbitro.
+      Estimación estadística basada en jugadas anteriores. No reemplaza el criterio arbitral.
     </footer>
   </div>
 
@@ -233,7 +234,7 @@
       </div>
       <h3>Atributos</h3>
       <div class="table-wrap"><table class="table" id="compare-table">
-        <thead><tr><th>Atributo</th><th>En revisión</th><th>Anterior</th></tr></thead>
+        <thead><tr><th>Atributo</th><th>Esta jugada</th><th>Anterior</th></tr></thead>
         <tbody></tbody>
       </table></div>
     </div>

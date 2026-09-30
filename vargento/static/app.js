@@ -7,8 +7,9 @@ const state = {
   reviewValues: null, reviewType: null, myMedia: [], mediaMode: "file",
 };
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"];
-const ROLES = { admin: "Administrador", analista: "Analista", operador: "Operador VAR", arbitro: "Árbitro" };
+const ROLES = { periodista: "Periodista", editor: "Editor", admin: "Administrador" };
 const REC_CLASS = { COBRAR: "yes", "NO COBRAR": "no", DUDOSA: "doubt" };
+const REC_LABEL = { COBRAR: "SE COBRA", "NO COBRAR": "NO SE COBRA", DUDOSA: "DIVIDIDA" };
 
 // ---------- utilidades ----------
 
@@ -183,14 +184,7 @@ function segmented(options, current, onChange) {
 
 function setupReviewForm() {
   const sel = $("referee");
-  const bound = state.user.role === "arbitro" && state.user.referee_id;
-  if (bound) {
-    refereeOptions(sel, { selected: state.user.referee_id });
-    sel.disabled = true;
-  } else {
-    refereeOptions(sel, { empty: "(sin árbitro — sólo jugadas similares)" });
-    sel.disabled = false;
-  }
+  refereeOptions(sel, { empty: "(sin árbitro — sólo jugadas similares)" });
   state.type = state.types[0];
   const types = segmented(state.types.map((t) => [t.key, t.label]), state.type.key, selectType);
   types.id = "play-types";
@@ -250,7 +244,7 @@ function renderPlays(listId, plays, emptyText) {
       el("div", {}, el("div", { className: "desc" }, p.description || "(sin descripción)"),
         el("div", { className: "meta" }, [p.referee, p.match, p.date].filter(Boolean).join(" · "))),
       el("span", { className: "right" }, mediaBadge(p.media),
-        el("span", { className: "sim", title: "Similitud con la jugada en revisión" }, pct(p.similarity))))));
+        el("span", { className: "sim", title: "Similitud con la jugada analizada" }, pct(p.similarity))))));
   }
 }
 
@@ -356,9 +350,9 @@ async function openCompare(playId) {
   const r = state.review;
 
   $("compare-left").replaceChildren(
-    el("h3", {}, "En revisión", pill(REC_CLASS[r.recommendation], `${r.recommendation} · ${pct(r.probability_call)}`)),
+    el("h3", {}, "Esta jugada", pill(REC_CLASS[r.recommendation], `${REC_LABEL[r.recommendation]} · ${pct(r.probability_call)}`)),
     el("div", { className: "compare-meta" }, r.referee ? r.referee.name : "Sin árbitro seleccionado"),
-    mediaGallery(state.myMedia, { emptyText: "Sin video de la jugada en revisión." }),
+    mediaGallery(state.myMedia, { emptyText: "Sin video de esta jugada." }),
   );
 
   const renderRight = async () => {
@@ -409,7 +403,7 @@ function renderResult(r) {
   $("result").hidden = false;
   $("question").textContent = r.question + (r.referee ? ` — ${r.referee.name}` : "");
   const v = $("verdict");
-  v.textContent = r.recommendation;
+  v.textContent = REC_LABEL[r.recommendation];
   v.className = `verdict ${REC_CLASS[r.recommendation]}`;
   $("bar-yes").style.width = pct(r.probability_call);
   $("bar-no").style.width = pct(r.probability_no_call);
@@ -490,10 +484,113 @@ for (const b of document.querySelectorAll(".decision-buttons button")) {
     const done = $("decision-done");
     done.hidden = false;
     const matched = (state.review.probability_call >= 0.5) === called;
-    done.textContent = `Registrado: ${called ? "se cobró" : "no se cobró"}. La jugada ya forma parte del histórico. `
-      + (state.review.recommendation === "DUDOSA" ? "(La sugerencia era dudosa.)" : matched ? "Coincidió con la sugerencia." : "No coincidió con la sugerencia.");
+    done.textContent = `Registrado: ${called ? "lo cobró" : "no lo cobró"}. La jugada ya forma parte del archivo. `
+      + (state.review.recommendation === "DUDOSA" ? "(VARgento la daba como dividida.)" : matched ? "VARgento acertó." : "VARgento no acertó.");
   }));
 }
+
+// ---------- placa para redes ----------
+
+/** Dibuja una placa 1200×675 (16:9) con el resultado, lista para redes o notas. */
+async function drawCard() {
+  const r = state.review;
+  const type = state.types.find((t) => t.key === r.play_type);
+  const W = 1200, H = 675;
+  const canvas = el("canvas", { width: W, height: H });
+  const ctx = canvas.getContext("2d");
+  await document.fonts.ready.catch(() => {});
+  const display = (weight, size) => `${weight} ${size}px "Barlow Condensed", "Arial Narrow", sans-serif`;
+  const body = (size) => `${size}px Barlow, system-ui, sans-serif`;
+
+  // Pasto a franjas + oscurecido
+  for (let x = 0, i = 0; x < W; x += 100, i++) {
+    ctx.fillStyle = i % 2 ? "#19532e" : "#1d5c33";
+    ctx.fillRect(x, 0, 100, H);
+  }
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fillRect(0, 0, W, H);
+  // Líneas de cal: borde, línea media y círculo central
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(24, 24, W - 48, H - 48);
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.beginPath(); ctx.arc(W - 140, H / 2, 220, 0, Math.PI * 2); ctx.stroke();
+
+  // Marca
+  ctx.font = display(800, 44);
+  ctx.textBaseline = "alphabetic";
+  const logoW = ctx.measureText("VAR").width + 20;
+  ctx.fillStyle = "#f3f7f2";
+  ctx.fillRect(60, 58, logoW, 50);
+  ctx.fillStyle = "#19532e";
+  ctx.fillText("VAR", 70, 100);
+  ctx.fillStyle = "#f3f7f2";
+  ctx.fillText("GENTO", 60 + logoW + 10, 100);
+
+  // Pregunta y contexto
+  ctx.font = display(700, 40);
+  ctx.fillText(r.question.toUpperCase(), 60, 180);
+  ctx.font = body(24);
+  ctx.fillStyle = "#a9c2b0";
+  const context = [type ? type.label : "", r.referee ? `Árbitro: ${r.referee.name}` : ""].filter(Boolean).join(" · ");
+  ctx.fillText(context, 60, 218);
+
+  // Veredicto estilo TV
+  const colors = { COBRAR: "#3ddc84", "NO COBRAR": "#ff4d4f", DUDOSA: "#f5c518" };
+  const label = REC_LABEL[r.recommendation];
+  ctx.font = display(800, 104);
+  const vw = ctx.measureText(label).width;
+  ctx.fillStyle = colors[r.recommendation];
+  ctx.fillRect(60, 250, 18, 118);
+  ctx.fillStyle = "#f3f7f2";
+  ctx.fillRect(78, 250, vw + 48, 118);
+  ctx.fillStyle = "#19532e";
+  ctx.fillText(label, 102, 350);
+
+  // Barra SÍ / NO
+  const barY = 470, barX = 60, barW = W - 120;
+  const yes = r.probability_call;
+  ctx.font = display(700, 30);
+  ctx.fillStyle = "#f3f7f2";
+  ctx.fillText("SÍ", barX, barY - 22);
+  ctx.textAlign = "right";
+  ctx.fillText("NO", barX + barW, barY - 22);
+  ctx.font = display(800, 64);
+  ctx.fillStyle = "#3ddc84";
+  ctx.textAlign = "left";
+  ctx.fillText(pct(yes), barX + 44, barY - 18);
+  ctx.fillStyle = "#ff4d4f";
+  ctx.textAlign = "right";
+  ctx.fillText(pct(1 - yes), barX + barW - 54, barY - 18);
+  ctx.textAlign = "left";
+  const split = Math.round(barW * yes);
+  ctx.fillStyle = "#3ddc84";
+  ctx.fillRect(barX, barY, Math.max(0, split - 3), 22);
+  ctx.fillStyle = "#ff4d4f";
+  ctx.fillRect(barX + split + 3, barY, Math.max(0, barW - split - 3), 22);
+
+  // Respaldo y aviso
+  ctx.font = body(22);
+  ctx.fillStyle = "#f3f7f2";
+  const n = Math.round(r.components.similar_plays_effective_n);
+  const adj = Math.round(r.components.referee_adjustment * 100);
+  const refText = r.referee && Math.abs(adj) > 1 ? ` · criterio del árbitro: ${adj > 0 ? "+" : ""}${adj} pts` : "";
+  ctx.fillText(`Basado en ${n} jugadas similares · confianza ${r.confidence}${refText}`, 60, 548);
+  ctx.font = body(18);
+  ctx.fillStyle = "#a9c2b0";
+  ctx.fillText(`Estimación estadística, no reemplaza el criterio arbitral · ${new Date().toLocaleDateString("es-AR")}`, 60, 610);
+  return canvas;
+}
+
+$("btn-card").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+  const canvas = await drawCard();
+  const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+  const a = el("a", { href: URL.createObjectURL(blob), download: `vargento-${state.review.play_type}-${today()}.png` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}));
 
 // ---------- historial ----------
 
@@ -505,16 +602,16 @@ function statTile(label, value, detail) {
 async function loadHistory() {
   const [stats, reviews] = await Promise.all([api("/api/reviews/stats"), api("/api/reviews?limit=100")]);
   $("review-stats").replaceChildren(
-    statTile("Revisiones con decisión", String(stats.decided), `${stats.pending} sin decisión registrada`),
-    statTile("Acierto general", pct(stats.accuracy), "sugerencia ≥50% vs. decisión"),
-    statTile("Acierto en no dudosas", pct(stats.decisive_accuracy), `${stats.decisive} revisiones`),
+    statTile("Jugadas con decisión", String(stats.decided), `${stats.pending} sin decisión registrada`),
+    statTile("Acierto general", pct(stats.accuracy), "VARgento vs. lo que cobró el árbitro"),
+    statTile("Acierto en no divididas", pct(stats.decisive_accuracy), `${stats.decisive} jugadas`),
     statTile("Brier score", stats.brier == null ? "—" : stats.brier.toFixed(3), "menor es mejor (0 = perfecto)"),
   );
   const typeLabel = Object.fromEntries(state.types.map((t) => [t.key, t.label]));
   const tbody = $("reviews-table").querySelector("tbody");
   tbody.replaceChildren();
   if (!reviews.length) {
-    tbody.append(el("tr", {}, el("td", { colSpan: 7, className: "muted" }, "Todavía no hay revisiones.")));
+    tbody.append(el("tr", {}, el("td", { colSpan: 7, className: "muted" }, "Todavía no hay análisis.")));
   }
   for (const r of reviews) {
     const final = r.final_called == null ? pill("pending", "PENDIENTE") : pill(r.final_called ? "yes" : "no", r.final_called ? "COBRÓ" : "NO COBRÓ");
@@ -523,7 +620,7 @@ async function loadHistory() {
       el("td", {}, r.referee || "—"),
       el("td", {}, typeLabel[r.play_type] || r.play_type),
       el("td", { className: "num" }, pct(r.probability)),
-      el("td", {}, pill(REC_CLASS[r.recommendation], r.recommendation)),
+      el("td", {}, pill(REC_CLASS[r.recommendation], REC_LABEL[r.recommendation])),
       el("td", {}, final),
       el("td", { className: "muted" }, r.user || "")));
   }
@@ -582,7 +679,7 @@ function metricsView(m, title) {
     el("h3", {}, title),
     el("div", { className: "metrics" },
       statTile("Acierto", pct(m.accuracy), `${m.n} jugadas evaluadas de ${m.total_plays}`),
-      statTile("Acierto en no dudosas", pct(m.decisive_accuracy), `${pct(m.decisive_share)} de las jugadas`),
+      statTile("Acierto en no divididas", pct(m.decisive_accuracy), `${pct(m.decisive_share)} de las jugadas`),
       statTile("Log-loss", m.log_loss.toFixed(3), `sin árbitro ${m.log_loss_without_referee.toFixed(3)} · sólo promedio ${m.log_loss_base_rate.toFixed(3)}`),
       statTile("Brier", m.brier.toFixed(3), "menor es mejor")),
     el("h3", {}, "Calibración: ¿cuando dice X%, se cobra X%?"),
@@ -646,17 +743,13 @@ async function patchUser(id, body, okMessage) {
 
 async function loadUsers() {
   const users = await api("/api/users");
-  roleSelect($("new-user-role"), "operador");
-  refereeOptions($("new-user-ref"), { empty: "(sin árbitro vinculado)" });
+  roleSelect($("new-user-role"), "periodista");
   const tbody = $("users-table").querySelector("tbody");
   tbody.replaceChildren();
   for (const u of users) {
     const isMe = u.id === state.user.id;
     const role = roleSelect(el("select", { disabled: isMe, "aria-label": `Rol de ${u.username}` }), u.role);
     role.addEventListener("change", () => patchUser(u.id, { role: role.value }, "Rol actualizado."));
-    const ref = el("select", { "aria-label": `Árbitro de ${u.username}` });
-    refereeOptions(ref, { empty: "—", selected: u.referee_id });
-    ref.addEventListener("change", () => patchUser(u.id, ref.value ? { referee_id: Number(ref.value) } : { clear_referee: true }, "Árbitro vinculado actualizado."));
     const toggle = el("button", { type: "button", className: "link", disabled: isMe },
       u.active ? "Desactivar" : "Activar");
     toggle.addEventListener("click", () => patchUser(u.id, { active: !u.active }, u.active ? "Usuario desactivado." : "Usuario activado."));
@@ -668,7 +761,6 @@ async function loadUsers() {
     tbody.append(el("tr", {},
       el("td", {}, u.username + (isMe ? " (vos)" : "")),
       el("td", {}, role),
-      el("td", {}, ref),
       el("td", {}, u.active ? pill("yes", "ACTIVO") : pill("pending", "INACTIVO")),
       el("td", {}, el("div", { className: "user" }, toggle, reset))));
   }
@@ -677,12 +769,10 @@ async function loadUsers() {
 $("user-form").addEventListener("submit", (e) => {
   e.preventDefault();
   busy(e.submitter, async () => {
-    const refId = $("new-user-ref").value;
     await post("/api/users", {
       username: $("new-user-name").value.trim(),
       password: $("new-user-pass").value,
       role: $("new-user-role").value,
-      referee_id: refId ? Number(refId) : null,
     });
     $("user-form").reset();
     toast("Usuario creado.");

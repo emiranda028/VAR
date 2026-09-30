@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from conftest import offside
+from vargento import auth
 from vargento.importer import import_csv
 from vargento.media import embed, start_from_url, youtube_id
 
@@ -21,7 +22,7 @@ def test_youtube_and_start_parsing():
 
 
 def test_attach_media_to_review_and_it_moves_to_history(login):
-    client = login("operador")
+    client = login("periodista")
     ref_id = client.get("/api/referees").json()[0]["id"]
     review = client.post("/api/predict", json={"play_type": "offside", "referee_id": ref_id, "features": offside(30)}).json()
     rid = review["review_id"]
@@ -49,7 +50,7 @@ def test_attach_media_to_review_and_it_moves_to_history(login):
 
 
 def test_media_permissions_and_validation(login, app):
-    op = login("operador")
+    op = login("periodista")
     rid = op.post("/api/predict", json={"play_type": "offside", "features": offside(1)}).json()["review_id"]
     bad_type = op.post(f"/api/media/upload?review_id={rid}", content=b"MZ", headers={"Content-Type": "application/x-msdownload"})
     assert bad_type.status_code == 415
@@ -57,7 +58,9 @@ def test_media_permissions_and_validation(login, app):
     assert op.post("/api/media/link", json={"url": "https://x.com/a.mp4"}).status_code == 422
     assert op.post("/api/media/link", json={"play_id": 1, "url": "https://x.com/a.mp4"}).status_code == 403
 
-    other = login("arbitro")
+    app.state.db.add_user("otro_periodista", auth.hash_password("clave-de-prueba"), "periodista")
+    other = TestClient(app)
+    other.post("/api/auth/login", json={"username": "otro_periodista", "password": "clave-de-prueba"})
     assert other.post("/api/media/link", json={"review_id": rid, "url": "https://x.com/a.mp4"}).status_code == 403
 
     item = op.post(f"/api/media/upload?review_id={rid}", content=PNG, headers={"Content-Type": "image/png"}).json()
@@ -66,8 +69,8 @@ def test_media_permissions_and_validation(login, app):
     assert op.delete(f"/api/media/{item['id']}").status_code == 200
     assert op.get(f"/api/media/{item['id']}/file").status_code == 404
 
-    analista = login("analista")
-    assert analista.post("/api/media/link", json={"play_id": 1, "url": "https://x.com/a.jpg"}).status_code == 201
+    editor = login("editor")
+    assert editor.post("/api/media/link", json={"play_id": 1, "url": "https://x.com/a.jpg"}).status_code == 201
 
 
 def test_import_with_video_column(db):

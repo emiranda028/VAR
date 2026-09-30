@@ -26,7 +26,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 COOKIE = "vargento_session"
 log = logging.getLogger("vargento")
 
-Role = Literal["admin", "analista", "operador", "arbitro"]
+Role = Literal["periodista", "editor", "admin"]
 
 
 class LoginIn(BaseModel):
@@ -43,13 +43,10 @@ class UserIn(BaseModel):
     username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     password: str = Field(max_length=256)
     role: Role
-    referee_id: int | None = None
 
 
 class UserPatch(BaseModel):
     role: Role | None = None
-    referee_id: int | None = None
-    clear_referee: bool = False
     active: bool | None = None
     password: str | None = Field(default=None, max_length=256)
 
@@ -218,14 +215,6 @@ def create_app(
             raise HTTPException(404, f"Árbitro {referee_id} no encontrado")
         return ref
 
-    def _own_referee(user: dict, referee_id: int | None) -> int | None:
-        """Un usuario árbitro vinculado sólo puede operar sobre su propio árbitro."""
-        if user["role"] == "arbitro" and user["referee_id"] is not None:
-            if referee_id not in (None, user["referee_id"]):
-                raise HTTPException(403, "Sólo podés operar sobre tus propias jugadas")
-            return user["referee_id"]
-        return referee_id
-
     def _media_by_play(play_ids: list[int]) -> dict[int, list[dict]]:
         out: dict[int, list[dict]] = {}
         for m in db.media_for(play_ids=play_ids):
@@ -308,7 +297,7 @@ def create_app(
     @app.post("/api/predict")
     def predict_play(body: PredictIn, user: dict = Depends(require("predict"))) -> dict:
         pt, features = _check(body.play_type, body.features)
-        referee_id = _own_referee(user, body.referee_id)
+        referee_id = body.referee_id
         referee = _referee_or_404(referee_id) if referee_id is not None else None
         result = predict(pt, features, referee_id, db.history(pt.key), app.state.params)
         review_id = db.add_review(
@@ -360,7 +349,7 @@ def create_app(
             raise HTTPException(404, "Revisión no encontrada")
         if review["final_called"] is not None:
             raise HTTPException(409, "Esta revisión ya tiene decisión final")
-        referee_id = _own_referee(user, body.referee_id or review["referee_id"])
+        referee_id = body.referee_id or review["referee_id"]
         if referee_id is None:
             raise HTTPException(422, "Indicá qué árbitro tomó la decisión")
         _referee_or_404(referee_id)
@@ -482,7 +471,7 @@ def create_app(
         if not item:
             raise HTTPException(404, "Archivo no encontrado")
         if item["created_by"] != user["id"] and not auth.can(user["role"], "manage_data"):
-            raise HTTPException(403, "Sólo quien lo subió o un analista puede borrarlo")
+            raise HTTPException(403, "Sólo quien lo subió o un editor puede borrarlo")
         db.delete_media(media_id)
         if item["kind"] == "file":
             mediautil.safe_path(media_dir, item["path"]).unlink(missing_ok=True)
@@ -520,10 +509,8 @@ def create_app(
     @app.post("/api/users", status_code=201)
     def create_user(body: UserIn, _: dict = Depends(require("manage_users"))) -> dict:
         _check_password(body.password)
-        if body.referee_id is not None:
-            _referee_or_404(body.referee_id)
         try:
-            return db.add_user(body.username, auth.hash_password(body.password), body.role, body.referee_id)
+            return db.add_user(body.username, auth.hash_password(body.password), body.role)
         except sqlite3.IntegrityError as exc:
             raise HTTPException(409, "Ese nombre de usuario ya existe") from exc
 
@@ -536,11 +523,6 @@ def create_app(
         changes: dict = {}
         if body.role:
             changes["role"] = body.role
-        if body.clear_referee:
-            changes["referee_id"] = None
-        elif body.referee_id is not None:
-            _referee_or_404(body.referee_id)
-            changes["referee_id"] = body.referee_id
         if body.active is not None:
             changes["active"] = int(body.active)
         if body.password:

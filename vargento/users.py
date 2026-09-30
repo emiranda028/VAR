@@ -1,6 +1,6 @@
 """Gestión de usuarios por consola (por ejemplo, si se pierde la clave del admin).
 
-    python -m vargento.users crear USUARIO ROL [--arbitro-id N]
+    python -m vargento.users crear USUARIO ROL      (ROL: periodista, editor, admin)
     python -m vargento.users clave USUARIO
     python -m vargento.users listar
 """
@@ -33,7 +33,6 @@ def main() -> None:
     crear = sub.add_parser("crear")
     crear.add_argument("usuario")
     crear.add_argument("rol", choices=sorted(auth.ROLES))
-    crear.add_argument("--arbitro-id", type=int)
     clave = sub.add_parser("clave")
     clave.add_argument("usuario")
     sub.add_parser("listar")
@@ -43,9 +42,9 @@ def main() -> None:
     if args.cmd == "listar":
         for u in db.list_users():
             estado = "activo" if u["active"] else "inactivo"
-            print(f"{u['id']:>3}  {u['username']:<20} {u['role']:<9} {estado:<8} {u['referee'] or ''}")
+            print(f"{u['id']:>3}  {u['username']:<20} {u['role']:<10} {estado}")
     elif args.cmd == "crear":
-        u = db.add_user(args.usuario, auth.hash_password(_ask_password()), args.rol, args.arbitro_id)
+        u = db.add_user(args.usuario, auth.hash_password(_ask_password()), args.rol)
         print(f"Usuario {u['username']} creado con rol {u['role']}.")
     else:
         cred = db.get_user_credentials(args.usuario)
