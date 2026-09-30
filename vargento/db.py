@@ -7,7 +7,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from .model import HistoricalPlay
+from .model import HistoricalPlay, ModelParams
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS referees (
@@ -27,7 +27,42 @@ CREATE TABLE IF NOT EXISTS plays (
 );
 CREATE INDEX IF NOT EXISTS plays_type_idx ON plays(play_type);
 CREATE INDEX IF NOT EXISTS plays_referee_idx ON plays(referee_id);
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL,
+    referee_id INTEGER REFERENCES referees(id),
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    user_id INTEGER REFERENCES users(id),
+    referee_id INTEGER REFERENCES referees(id),
+    play_type TEXT NOT NULL,
+    features TEXT NOT NULL,
+    probability REAL NOT NULL,
+    recommendation TEXT NOT NULL,
+    final_called INTEGER,
+    decided_at TEXT,
+    decided_by INTEGER REFERENCES users(id),
+    play_id INTEGER REFERENCES plays(id)
+);
+CREATE INDEX IF NOT EXISTS reviews_created_idx ON reviews(created_at);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
+
+USER_COLUMNS = "u.id, u.username, u.role, u.referee_id, u.active, u.created_at, r.name AS referee"
 
 
 class Database:
@@ -52,6 +87,12 @@ class Database:
 
     def get_referee(self, referee_id: int) -> dict | None:
         row = self._conn.execute("SELECT * FROM referees WHERE id = ?", (referee_id,)).fetchone()
+        return dict(row) if row else None
+
+    def find_referee(self, name: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM referees WHERE lower(name) = lower(?)", (name.strip(),)
+        ).fetchone()
         return dict(row) if row else None
 
     def list_referees(self) -> list[dict]:
@@ -83,9 +124,18 @@ class Database:
             )
         return cur.lastrowid
 
-    def add_plays(self, plays: list[tuple]) -> None:
-        """Carga masiva: tuplas (play_type, referee_id, features, called, description, match, date)."""
+    def add_plays(self, plays: list[tuple], new_referees: list[tuple[str, str]] = ()) -> None:
+        """Carga masiva en una sola transacción.
+
+        `plays` son tuplas (play_type, referee_id, features, called, description, match, date).
+        `referee_id` puede ser un nombre de `new_referees`, que se crean en la misma transacción.
+        """
         with self._lock, self._conn:
+            ids = {}
+            for name, country in new_referees:
+                cur = self._conn.execute("INSERT INTO referees (name, country) VALUES (?, ?)", (name, country))
+                ids[name] = cur.lastrowid
+            plays = [(t, ids.get(r, r), f, c, d, m, dt) for t, r, f, c, d, m, dt in plays]
             self._conn.executemany(
                 "INSERT INTO plays (play_type, referee_id, features, called, description, match, date)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -153,3 +203,178 @@ class Database:
             }
             for r in rows
         ]
+
+    # --- configuración del modelo ---------------------------------------
+    def get_model_params(self) -> ModelParams:
+        row = self._conn.execute("SELECT value FROM settings WHERE key = 'model_params'").fetchone()
+        return ModelParams.from_dict(json.loads(row[0]) if row else None)
+
+    def set_model_params(self, params: ModelParams) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('model_params', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (json.dumps(params.to_dict()),),
+            )
+
+    # --- usuarios y sesiones --------------------------------------------
+    def count_users(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+    def add_user(self, username: str, password_hash: str, role: str, referee_id: int | None = None) -> dict:
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "INSERT INTO users (username, password_hash, role, referee_id) VALUES (?, ?, ?, ?)",
+                (username.strip(), password_hash, role, referee_id),
+            )
+        return self.get_user(cur.lastrowid)
+
+    def get_user(self, user_id: int) -> dict | None:
+        row = self._conn.execute(
+            f"SELECT {USER_COLUMNS} FROM users u LEFT JOIN referees r ON r.id = u.referee_id WHERE u.id = ?",
+            (user_id,),
+        ).fetchone()
+        return _user(row)
+
+    def get_user_credentials(self, username: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT id, password_hash, active FROM users WHERE username = ?", (username.strip(),)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_users(self) -> list[dict]:
+        rows = self._conn.execute(
+            f"SELECT {USER_COLUMNS} FROM users u LEFT JOIN referees r ON r.id = u.referee_id ORDER BY u.username"
+        ).fetchall()
+        return [_user(r) for r in rows]
+
+    def update_user(self, user_id: int, **changes) -> dict | None:
+        allowed = {"role", "referee_id", "active", "password_hash"}
+        sets = {k: v for k, v in changes.items() if k in allowed}
+        if sets:
+            cols = ", ".join(f"{k} = ?" for k in sets)
+            with self._lock, self._conn:
+                self._conn.execute(f"UPDATE users SET {cols} WHERE id = ?", (*sets.values(), user_id))
+                if sets.get("active") == 0 or "password_hash" in sets:
+                    self._conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        return self.get_user(user_id)
+
+    def create_session(self, token_hash: str, user_id: int, expires_at: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM sessions WHERE expires_at < datetime('now')")
+            self._conn.execute(
+                "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+                (token_hash, user_id, expires_at),
+            )
+
+    def session_user(self, token_hash: str) -> dict | None:
+        row = self._conn.execute(
+            f"""SELECT {USER_COLUMNS} FROM sessions s
+                JOIN users u ON u.id = s.user_id
+                LEFT JOIN referees r ON r.id = u.referee_id
+                WHERE s.token_hash = ? AND s.expires_at > datetime('now') AND u.active = 1""",
+            (token_hash,),
+        ).fetchone()
+        return _user(row)
+
+    def delete_session(self, token_hash: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+
+    # --- revisiones -----------------------------------------------------
+    def add_review(
+        self,
+        user_id: int | None,
+        referee_id: int | None,
+        play_type: str,
+        features: dict[str, float],
+        probability: float,
+        recommendation: str,
+    ) -> int:
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "INSERT INTO reviews (user_id, referee_id, play_type, features, probability, recommendation)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, referee_id, play_type, json.dumps(features), probability, recommendation),
+            )
+        return cur.lastrowid
+
+    def get_review(self, review_id: int) -> dict | None:
+        row = self._conn.execute(
+            """SELECT v.*, r.name AS referee, u.username AS user FROM reviews v
+               LEFT JOIN referees r ON r.id = v.referee_id
+               LEFT JOIN users u ON u.id = v.user_id
+               WHERE v.id = ?""",
+            (review_id,),
+        ).fetchone()
+        return _review(row)
+
+    def list_reviews(self, limit: int = 50) -> list[dict]:
+        rows = self._conn.execute(
+            """SELECT v.*, r.name AS referee, u.username AS user FROM reviews v
+               LEFT JOIN referees r ON r.id = v.referee_id
+               LEFT JOIN users u ON u.id = v.user_id
+               ORDER BY v.id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [_review(r) for r in rows]
+
+    def decide_review(
+        self,
+        review_id: int,
+        called: bool,
+        user_id: int | None,
+        referee_id: int,
+        description: str = "",
+        match: str = "",
+        date: str = "",
+    ) -> dict | None:
+        """Guarda la decisión final y suma la jugada al histórico (en una transacción).
+
+        Devuelve None si la revisión no existe o ya tenía decisión.
+        """
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT * FROM reviews WHERE id = ? AND final_called IS NULL", (review_id,)
+            ).fetchone()
+            if not row:
+                return None
+            cur = self._conn.execute(
+                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (row["play_type"], referee_id, row["features"], int(called), description, match, date),
+            )
+            self._conn.execute(
+                "UPDATE reviews SET final_called = ?, decided_at = datetime('now'), decided_by = ?,"
+                " play_id = ?, referee_id = ? WHERE id = ?",
+                (int(called), user_id, cur.lastrowid, referee_id, review_id),
+            )
+        return self.get_review(review_id)
+
+    def count_pending_reviews(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM reviews WHERE final_called IS NULL").fetchone()[0]
+
+    def review_outcomes(self) -> list[tuple[float, bool, str]]:
+        """(probabilidad dada, decisión final, recomendación) de las revisiones ya decididas."""
+        rows = self._conn.execute(
+            "SELECT probability, final_called, recommendation FROM reviews WHERE final_called IS NOT NULL"
+        ).fetchall()
+        return [(r[0], bool(r[1]), r[2]) for r in rows]
+
+
+def _user(row) -> dict | None:
+    if not row:
+        return None
+    d = dict(row)
+    d["active"] = bool(d["active"])
+    return d
+
+
+def _review(row) -> dict | None:
+    if not row:
+        return None
+    d = dict(row)
+    d["features"] = json.loads(d["features"])
+    if d["final_called"] is not None:
+        d["final_called"] = bool(d["final_called"])
+    return d

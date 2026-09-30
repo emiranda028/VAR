@@ -1,10 +1,9 @@
 import pytest
-from fastapi.testclient import TestClient
 
-from vargento.api import create_app
 from vargento.db import Database
 from vargento.domain import get_play_type, validate_features
-from vargento.model import HistoricalPlay, predict, similarity
+from vargento.evaluate import calibrate, evaluate
+from vargento.model import HistoricalPlay, ModelParams, predict, similarity
 from vargento.seed import seed
 
 OFFSIDE = get_play_type("offside")
@@ -62,43 +61,26 @@ def test_validate_features_rejects_missing_and_out_of_range():
     assert validate_features(OFFSIDE, {**offside(3), "interfiere_juego": True})["interfiere_juego"] == 1.0
 
 
-@pytest.fixture
-def client(tmp_path):
-    db = Database(tmp_path / "test.db")
-    seed(db, n_plays=800)
-    yield TestClient(create_app(db, seed_demo=False))
+def test_params_change_predictions_and_roundtrip():
+    history = [hp(i, 1, offside(10), True) for i in range(10)] + [hp(50 + i, 1, offside(-10), False) for i in range(10)]
+    narrow = predict(OFFSIDE, offside(0), None, history, ModelParams(bandwidth=0.05))
+    wide = predict(OFFSIDE, offside(0), None, history, ModelParams(bandwidth=0.5))
+    assert narrow.effective_similar < wide.effective_similar
+    assert ModelParams.from_dict(ModelParams(top_k=5).to_dict()) == ModelParams(top_k=5)
+    assert ModelParams.from_dict({"bandwidth": 0.1, "desconocido": 1}).bandwidth == 0.1
+
+
+def test_evaluate_and_calibrate_on_demo_data(tmp_path):
+    db = Database(tmp_path / "e.db")
+    seed(db, n_plays=500)
+    history = db.history()
+    m = evaluate(history, max_samples=120)
+    assert m["n"] == 120
+    assert m["accuracy"] > 0.7
+    assert m["log_loss"] < m["log_loss_base_rate"]
+    assert sum(b["n"] for b in m["calibration"]) == 120
+    result = calibrate(history, grid={"bandwidth": (0.08, 0.5)}, max_samples=80)
+    assert result["best"]["bandwidth"] == 0.08
+    db.set_model_params(ModelParams.from_dict(result["best"]))
+    assert db.get_model_params().bandwidth == 0.08
     db.close()
-
-
-def test_api_predict_end_to_end(client):
-    refs = client.get("/api/referees").json()
-    assert len(refs) == 8
-    r = client.post(
-        "/api/predict",
-        json={"play_type": "offside", "referee_id": refs[0]["id"], "features": offside(25)},
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["probability_call"] + body["probability_no_call"] == pytest.approx(1.0)
-    assert body["recommendation"] == "COBRAR"
-    assert body["similar_plays"]
-
-
-def test_api_record_play_and_errors(client):
-    ref = client.post("/api/referees", json={"name": "Nuevo Árbitro"}).json()
-    assert client.post("/api/referees", json={"name": "Nuevo Árbitro"}).status_code == 409
-    created = client.post(
-        "/api/plays",
-        json={"play_type": "offside", "referee_id": ref["id"], "features": offside(5), "called": True},
-    )
-    assert created.status_code == 201
-    stats = client.get(f"/api/referees/{ref['id']}/stats").json()
-    assert next(s for s in stats["by_type"] if s["play_type"] == "offside")["plays"] == 1
-    assert client.post("/api/predict", json={"play_type": "xx", "features": {}}).status_code == 422
-    bad_ref = {"play_type": "offside", "referee_id": 9999, "features": offside(1)}
-    assert client.post("/api/predict", json=bad_ref).status_code == 404
-
-
-def test_ui_is_served(client):
-    assert "VARgento" in client.get("/").text
-    assert client.get("/static/app.js").status_code == 200

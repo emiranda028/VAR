@@ -20,20 +20,39 @@ El cálculo se hace en tres pasos, todos explicables:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 
 from .domain import PlayType
 
-# Parámetros del modelo (ajustables).
-# Valores elegidos minimizando log-loss en validación sobre los datos de demo;
-# conviene recalibrarlos con datos reales.
-BANDWIDTH = 0.08  # ancho del kernel para la probabilidad general
-REFEREE_BANDWIDTH = 0.25  # kernel más ancho: el sesgo del árbitro es un rasgo general
-TOP_K = 30  # jugadas similares consideradas para la probabilidad general
-BASE_PRIOR = 1.0  # peso (en "jugadas") de la tasa base del tipo
-REFEREE_PRIOR = 4.0  # peso (en "jugadas") del criterio de sus colegas frente al árbitro
 MIN_SIMILARITY = 0.01  # por debajo de esto una jugada no se considera parecida
 DOUBT_MARGIN = 0.10  # |p - 0.5| menor que esto => jugada dudosa
+
+
+@dataclass(frozen=True)
+class ModelParams:
+    """Parámetros ajustables. `vargento.evaluate.calibrate` los elige con los datos cargados.
+
+    Los valores por defecto minimizan el log-loss de validación en los datos de demo.
+    """
+
+    bandwidth: float = 0.08  # ancho del kernel para la probabilidad general
+    referee_bandwidth: float = 0.25  # más ancho: el sesgo del árbitro es un rasgo general
+    top_k: int = 30  # jugadas similares consideradas para la probabilidad general
+    base_prior: float = 1.0  # peso (en "jugadas") de la tasa base del tipo
+    referee_prior: float = 4.0  # peso (en "jugadas") del criterio de sus colegas frente al árbitro
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "ModelParams":
+        if not data:
+            return cls()
+        names = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in names})
+
+
+DEFAULT_PARAMS = ModelParams()
 
 
 @dataclass(frozen=True)
@@ -84,11 +103,10 @@ def distance(play_type: PlayType, a: dict[str, float], b: dict[str, float]) -> f
 
 
 def similarity(
-    play_type: PlayType, a: dict[str, float], b: dict[str, float], bandwidth: float | None = None
+    play_type: PlayType, a: dict[str, float], b: dict[str, float], bandwidth: float = DEFAULT_PARAMS.bandwidth
 ) -> float:
     d = distance(play_type, a, b)
-    bw = BANDWIDTH if bandwidth is None else bandwidth
-    return math.exp(-(d * d) / (2 * bw * bw))
+    return math.exp(-(d * d) / (2 * bandwidth * bandwidth))
 
 
 def _logit(p: float) -> float:
@@ -121,18 +139,19 @@ def predict(
     features: dict[str, float],
     referee_id: int | None,
     history: list[HistoricalPlay],
+    params: ModelParams = DEFAULT_PARAMS,
 ) -> Prediction:
     same_type = [p for p in history if p.play_type == play_type.key]
 
     base_rate = (sum(p.called for p in same_type) + 1) / (len(same_type) + 2)
 
-    scored = [ScoredPlay(p, similarity(play_type, features, p.features)) for p in same_type]
+    scored = [ScoredPlay(p, similarity(play_type, features, p.features, params.bandwidth)) for p in same_type]
     scored = [s for s in scored if s.similarity >= MIN_SIMILARITY]
     scored.sort(key=lambda s: s.similarity, reverse=True)
 
-    top = scored[:TOP_K]
+    top = scored[: params.top_k]
     w, wy = _weighted_rate(top)
-    general = (wy + BASE_PRIOR * base_rate) / (w + BASE_PRIOR)
+    general = (wy + params.base_prior * base_rate) / (w + params.base_prior)
 
     ref_all = [p for p in same_type if referee_id is not None and p.referee_id == referee_id]
     ref_similar: list[ScoredPlay] = []
@@ -140,7 +159,9 @@ def predict(
     peers_rate: float | None = None
     bias = 0.0
     if ref_all:
-        wide = [ScoredPlay(p, similarity(play_type, features, p.features, REFEREE_BANDWIDTH)) for p in same_type]
+        wide = [
+            ScoredPlay(p, similarity(play_type, features, p.features, params.referee_bandwidth)) for p in same_type
+        ]
         wide = [s for s in wide if s.similarity >= MIN_SIMILARITY]
         ref_similar = sorted(
             (s for s in wide if s.play.referee_id == referee_id), key=lambda s: s.similarity, reverse=True
@@ -149,8 +170,8 @@ def predict(
         rw, rwy = _weighted_rate(ref_similar)
         pw, pwy = _weighted_rate(peers)
         if rw > 0:
-            peers_rate = (pwy + BASE_PRIOR * base_rate) / (pw + BASE_PRIOR)
-            ref_rate = (rwy + REFEREE_PRIOR * peers_rate) / (rw + REFEREE_PRIOR)
+            peers_rate = (pwy + params.base_prior * base_rate) / (pw + params.base_prior)
+            ref_rate = (rwy + params.referee_prior * peers_rate) / (rw + params.referee_prior)
             bias = _logit(ref_rate) - _logit(peers_rate)
     final = _sigmoid(_logit(general) + bias)
 
