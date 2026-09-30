@@ -28,8 +28,8 @@ def db(tmp_path):
 
 
 @pytest.fixture
-def app(db):
-    return create_app(db, seed_demo=False, admin_password=ADMIN_PASSWORD)
+def app(db, tmp_path):
+    return create_app(db, seed_demo=False, admin_password=ADMIN_PASSWORD, media_dir=tmp_path / "media")
 
 
 @pytest.fixture

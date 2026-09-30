@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VARgento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600&family=Barlow+Condensed:wght@600;700;800&display=swap">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -11,7 +14,7 @@
   <main id="login-view" class="login" hidden>
     <form id="login-form" class="panel login-card">
       <div class="brand"><span class="logo">VAR</span>gento</div>
-      <p class="sub">Probabilidad de cobro para revisiones VAR</p>
+      <p class="sub">¿Se cobra o no se cobra? La probabilidad, con jugadas parecidas para comparar.</p>
       <label class="field"><span>Usuario</span><input id="login-user" autocomplete="username" required></label>
       <label class="field"><span>Contraseña</span><input id="login-pass" type="password" autocomplete="current-password" required></label>
       <div id="login-error" class="error" role="alert"></div>
@@ -21,7 +24,7 @@
 
   <!-- App -->
   <div id="app-view" hidden>
-    <header class="top">
+    <header class="top"><div class="top-inner">
       <div class="top-row">
         <div class="brand"><span class="logo">VAR</span>gento</div>
         <div class="user">
@@ -32,7 +35,7 @@
         </div>
       </div>
       <nav class="tabs" id="tabs" role="tablist"></nav>
-    </header>
+    </div></header>
 
     <!-- Revisión -->
     <main class="layout" id="tab-review" data-tab="Revisión" data-perm="predict">
@@ -48,6 +51,15 @@
             <div id="play-types" class="segmented" role="radiogroup"></div>
           </div>
           <div id="features"></div>
+          <div class="media-input">
+            <div class="field"><span>Video o foto de la jugada (opcional)</span></div>
+            <div id="media-mode"></div>
+            <input type="file" id="new-media-file" accept="image/*,video/mp4,video/webm,video/quicktime">
+            <div class="grid-url" id="new-media-link" hidden>
+              <input type="url" id="new-media-url" placeholder="https://youtu.be/... o enlace a .mp4/.jpg">
+              <input type="number" id="new-media-start" min="0" step="1" placeholder="Seg. inicio" aria-label="Segundo de inicio">
+            </div>
+          </div>
           <button type="submit" class="primary">Calcular probabilidad</button>
         </form>
       </section>
@@ -57,16 +69,24 @@
         <div id="empty" class="empty">Cargá los datos de la jugada y calculá la probabilidad.</div>
         <div id="result" hidden>
           <div class="question" id="question"></div>
-          <div class="verdict" id="verdict"></div>
+          <div class="verdict-bar">
+            <div class="verdict" id="verdict"></div>
+            <div class="verdict-tag">VAR</div>
+          </div>
+          <div class="bar-labels">
+            <span class="si">Sí <b id="p-yes"></b></span>
+            <span class="nop"><b id="p-no"></b> No</span>
+          </div>
           <div class="bar" aria-hidden="true">
             <div class="bar-yes" id="bar-yes"></div>
             <div class="bar-no" id="bar-no"></div>
           </div>
-          <div class="bar-labels">
-            <span><b id="p-yes"></b> SÍ</span>
-            <span>NO <b id="p-no"></b></span>
-          </div>
           <div class="confidence" id="confidence"></div>
+
+          <div class="my-play">
+            <h3>La jugada en revisión</h3>
+            <div id="my-media"></div>
+          </div>
 
           <div class="decision" id="decision" hidden>
             <h3>Decisión final</h3>
@@ -95,6 +115,7 @@
             <div class="stat"><div class="k">Promedio del tipo</div><div class="v" id="s-base"></div><div class="d">todas las jugadas</div></div>
           </div>
 
+          <p class="hint" style="margin-top:18px">Tocá cualquier jugada para compararla lado a lado.</p>
           <h3>Jugadas más parecidas del mismo árbitro</h3>
           <ul class="plays" id="ref-plays"></ul>
           <h3>Jugadas más parecidas (todos los árbitros)</h3>
@@ -198,6 +219,24 @@
         <button type="submit" class="primary inline">Guardar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="compare-dialog" class="wide" aria-labelledby="compare-title">
+    <div class="dialog-body">
+      <div class="dialog-head">
+        <h2 id="compare-title">Comparar jugadas</h2>
+        <button type="button" class="secondary" id="compare-close">Cerrar</button>
+      </div>
+      <div class="compare">
+        <div class="compare-col" id="compare-left"></div>
+        <div class="compare-col" id="compare-right"></div>
+      </div>
+      <h3>Atributos</h3>
+      <div class="table-wrap"><table class="table" id="compare-table">
+        <thead><tr><th>Atributo</th><th>En revisión</th><th>Anterior</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>

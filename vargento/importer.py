@@ -8,6 +8,8 @@ separador `,` o `;`):
 - `pais_arbitro` (opcional): país, sólo se usa al crear un árbitro nuevo.
 - `cobrado`: decisión final tras el VAR (si/no).
 - `fecha` (AAAA-MM-DD), `partido`, `descripcion`: opcionales.
+- `video` (opcional): enlace al video o foto (YouTube, Vimeo, .mp4, .jpg...).
+- `video_inicio` (opcional): segundo donde empieza la jugada (o `1m30s`).
 - Una columna por atributo del tipo de jugada (ver `/api/play-types`). Las
   columnas de atributos de otros tipos se dejan vacías.
 
@@ -28,8 +30,9 @@ import unicodedata
 
 from .db import Database
 from .domain import PLAY_TYPES, PlayType, validate_features
+from .media import start_from_url, validate_url
 
-BASE_COLUMNS = ["tipo", "arbitro", "pais_arbitro", "cobrado", "fecha", "partido", "descripcion"]
+BASE_COLUMNS = ["tipo", "arbitro", "pais_arbitro", "cobrado", "fecha", "partido", "descripcion", "video", "video_inicio"]
 TRUE = {"si", "s", "1", "true", "verdadero", "x", "yes", "y"}
 FALSE = {"no", "n", "0", "false", "falso", ""}
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -128,9 +131,18 @@ def import_csv(db: Database, text: str, dry_run: bool = False, create_referees: 
             if date and not DATE_RE.match(date):
                 raise ValueError(f"fecha: '{date}' no tiene formato AAAA-MM-DD")
             features = _features(pt, row)
+            link = None
+            url = (row.get("video") or "").strip()
+            if url:
+                url = validate_url(url)
+                start_cell = (row.get("video_inicio") or "").strip()
+                start = start_from_url(url)
+                if start_cell:
+                    start = float(start_cell) if start_cell.replace(".", "", 1).isdigit() else start_from_url(f"?t={start_cell}")
+                link = (url, start)
             plays.append((
                 pt.key, ref, features, called,
-                (row.get("descripcion") or "").strip(), (row.get("partido") or "").strip(), date,
+                (row.get("descripcion") or "").strip(), (row.get("partido") or "").strip(), date, link,
             ))
         except ValueError as exc:
             errors.append({"row": line, "error": str(exc)})
@@ -154,6 +166,7 @@ def template_csv() -> str:
     examples = [
         {"tipo": "offside", "arbitro": "Nombre Apellido", "pais_arbitro": "Argentina", "cobrado": "si",
          "fecha": "2025-03-09", "partido": "Local vs Visitante", "descripcion": "Delantero adelantado en el gol",
+         "video": "https://www.youtube.com/watch?v=ID_DEL_VIDEO", "video_inicio": "1m05s",
          "decision_campo": "no", "distancia_cm": "7", "interfiere_juego": "si", "jugada_deliberada_rival": "no"},
         {"tipo": "penal", "arbitro": "Nombre Apellido", "cobrado": "no", "fecha": "2025-03-09",
          "partido": "Local vs Visitante", "descripcion": "Contacto leve en el área",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+import tempfile
 from pathlib import Path
 from typing import Literal
 
@@ -14,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import __version__, auth
+from . import media as mediautil
 from .db import Database
 from .domain import PLAY_TYPES, get_play_type, validate_features
 from .evaluate import calibrate, evaluate
@@ -79,6 +81,14 @@ class DecisionIn(BaseModel):
     date: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
 
 
+class MediaLinkIn(BaseModel):
+    url: str = Field(max_length=2000)
+    start_seconds: float | None = Field(default=None, ge=0, le=36000)
+    caption: str = Field(default="", max_length=200)
+    review_id: int | None = None
+    play_id: int | None = None
+
+
 class ImportIn(BaseModel):
     csv: str = Field(max_length=20_000_000)
     dry_run: bool = False
@@ -109,10 +119,15 @@ def _request_token(request: Request) -> str | None:
 
 
 def create_app(
-    db: Database | None = None, seed_demo: bool | None = None, admin_password: str | None = None
+    db: Database | None = None,
+    seed_demo: bool | None = None,
+    admin_password: str | None = None,
+    media_dir: str | Path | None = None,
 ) -> FastAPI:
     if db is None:
         db = Database(os.environ.get("VARGENTO_DB", "vargento.db"))
+    media_dir = Path(media_dir or os.environ.get("VARGENTO_MEDIA_DIR", "media"))
+    media_dir.mkdir(parents=True, exist_ok=True)
     if seed_demo is None:
         seed_demo = os.environ.get("VARGENTO_SEED_DEMO", "1") == "1"
     if seed_demo and db.count_plays() == 0 and not db.list_referees():
@@ -211,7 +226,15 @@ def create_app(
             return user["referee_id"]
         return referee_id
 
+    def _media_by_play(play_ids: list[int]) -> dict[int, list[dict]]:
+        out: dict[int, list[dict]] = {}
+        for m in db.media_for(play_ids=play_ids):
+            out.setdefault(m["play_id"], []).append(mediautil.public(m))
+        return out
+
     def _scored(items: list[ScoredPlay], names: dict[int, str], limit: int) -> list[dict]:
+        items = items[:limit]
+        media = _media_by_play([s.play.id for s in items])
         return [
             {
                 "id": s.play.id,
@@ -223,8 +246,9 @@ def create_app(
                 "match": s.play.match,
                 "date": s.play.date,
                 "features": s.play.features,
+                "media": media.get(s.play.id, []),
             }
-            for s in items[:limit]
+            for s in items
         ]
 
     # --- catálogo, árbitros y jugadas -----------------------------------
@@ -268,6 +292,13 @@ def create_app(
             media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": 'attachment; filename="vargento_plantilla.csv"'},
         )
+
+    @app.get("/api/plays/{play_id:int}")
+    def play_detail(play_id: int, _: dict = Depends(require("view"))) -> dict:
+        play = db.get_play(play_id)
+        if not play:
+            raise HTTPException(404, "Jugada no encontrada")
+        return {**play, "media": _media_by_play([play_id]).get(play_id, [])}
 
     @app.post("/api/plays/import")
     def plays_import(body: ImportIn, _: dict = Depends(require("manage_data"))) -> dict:
@@ -315,6 +346,13 @@ def create_app(
             "referee_similar_plays": _scored(result.referee_similar, names, 5),
         }
 
+    @app.get("/api/reviews/{review_id:int}")
+    def review_detail(review_id: int, _: dict = Depends(require("view"))) -> dict:
+        review = db.get_review(review_id)
+        if not review:
+            raise HTTPException(404, "Revisión no encontrada")
+        return {**review, "media": [mediautil.public(m) for m in db.media_for(review_id=review_id)]}
+
     @app.post("/api/reviews/{review_id}/decision")
     def decide(review_id: int, body: DecisionIn, user: dict = Depends(require("decide"))) -> dict:
         review = db.get_review(review_id)
@@ -352,6 +390,103 @@ def create_app(
             ),
             "brier": (sum((p - y) ** 2 for p, y, _ in outcomes) / n) if n else None,
         }
+
+    # --- videos y fotos ------------------------------------------------
+    def _media_target(user: dict, review_id: int | None, play_id: int | None) -> tuple[int | None, int | None]:
+        """Valida a qué se adjunta el medio y si el usuario puede hacerlo."""
+        if (review_id is None) == (play_id is None):
+            raise HTTPException(422, "Indicá review_id o play_id (uno solo)")
+        if review_id is not None:
+            review = db.get_review(review_id)
+            if not review:
+                raise HTTPException(404, "Revisión no encontrada")
+            if review["user_id"] != user["id"] and not auth.can(user["role"], "manage_data"):
+                raise HTTPException(403, "Sólo quien creó la revisión puede adjuntarle videos")
+            if review["play_id"]:  # ya decidida: el medio va a la jugada del histórico
+                return None, review["play_id"]
+            return review_id, None
+        if not auth.can(user["role"], "manage_data"):
+            raise HTTPException(403, "Tu rol no puede adjuntar videos a jugadas del histórico")
+        if not db.get_play(play_id):
+            raise HTTPException(404, "Jugada no encontrada")
+        return None, play_id
+
+    @app.post("/api/media/link", status_code=201)
+    def media_link(body: MediaLinkIn, user: dict = Depends(require("predict"))) -> dict:
+        review_id, play_id = _media_target(user, body.review_id, body.play_id)
+        try:
+            url = mediautil.validate_url(body.url)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        start = body.start_seconds if body.start_seconds is not None else mediautil.start_from_url(url)
+        item = db.add_media("link", user["id"], play_id, review_id, url=url, start_seconds=start, caption=body.caption)
+        return mediautil.public(item)
+
+    @app.post("/api/media/upload", status_code=201)
+    async def media_upload(
+        request: Request,
+        review_id: int | None = None,
+        play_id: int | None = None,
+        caption: str = "",
+        start_seconds: float = 0,
+        user: dict = Depends(require("predict")),
+    ) -> dict:
+        review_id, play_id = _media_target(user, review_id, play_id)
+        mime = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        if mime not in mediautil.ALLOWED_MIME:
+            raise HTTPException(415, "Formato no admitido. Usá JPG, PNG, WEBP, GIF, MP4, WEBM o MOV.")
+        declared = int(request.headers.get("content-length") or 0)
+        if declared > mediautil.MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "El archivo supera los 300 MB")
+        name = mediautil.new_filename(mime)
+        size = 0
+        with tempfile.NamedTemporaryFile(dir=media_dir, delete=False, suffix=".part") as tmp:
+            try:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > mediautil.MAX_UPLOAD_BYTES:
+                        raise HTTPException(413, "El archivo supera los 300 MB")
+                    tmp.write(chunk)
+            except BaseException:
+                tmp.close()
+                os.unlink(tmp.name)
+                raise
+        if size == 0:
+            os.unlink(tmp.name)
+            raise HTTPException(422, "El archivo está vacío")
+        os.replace(tmp.name, mediautil.safe_path(media_dir, name))
+        item = db.add_media(
+            "file", user["id"], play_id, review_id, mime=mime, path=name,
+            start_seconds=max(0.0, start_seconds), caption=caption[:200],
+        )
+        return mediautil.public(item)
+
+    @app.get("/api/media/{media_id}/file")
+    def media_file(media_id: int, _: dict = Depends(require("view"))) -> FileResponse:
+        item = db.get_media(media_id)
+        if not item or item["kind"] != "file":
+            raise HTTPException(404, "Archivo no encontrado")
+        path = mediautil.safe_path(media_dir, item["path"])
+        if not path.exists():
+            raise HTTPException(404, "Archivo no encontrado")
+        return FileResponse(
+            path,
+            media_type=item["mime"],
+            headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600"},
+            content_disposition_type="inline",
+        )
+
+    @app.delete("/api/media/{media_id}")
+    def media_delete(media_id: int, user: dict = Depends(require("predict"))) -> dict:
+        item = db.get_media(media_id)
+        if not item:
+            raise HTTPException(404, "Archivo no encontrado")
+        if item["created_by"] != user["id"] and not auth.can(user["role"], "manage_data"):
+            raise HTTPException(403, "Sólo quien lo subió o un analista puede borrarlo")
+        db.delete_media(media_id)
+        if item["kind"] == "file":
+            mediautil.safe_path(media_dir, item["path"]).unlink(missing_ok=True)
+        return {"ok": True}
 
     # --- modelo ---------------------------------------------------------
     @app.get("/api/model")

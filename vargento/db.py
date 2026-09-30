@@ -56,6 +56,21 @@ CREATE TABLE IF NOT EXISTS reviews (
     play_id INTEGER REFERENCES plays(id)
 );
 CREATE INDEX IF NOT EXISTS reviews_created_idx ON reviews(created_at);
+CREATE TABLE IF NOT EXISTS media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    play_id INTEGER REFERENCES plays(id) ON DELETE CASCADE,
+    review_id INTEGER REFERENCES reviews(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,              -- 'file' (subido) o 'link' (enlace externo)
+    mime TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL DEFAULT '',   -- archivo dentro de la carpeta de medios
+    url TEXT NOT NULL DEFAULT '',
+    start_seconds REAL NOT NULL DEFAULT 0,
+    caption TEXT NOT NULL DEFAULT '',
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS media_play_idx ON media(play_id);
+CREATE INDEX IF NOT EXISTS media_review_idx ON media(review_id);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -127,7 +142,7 @@ class Database:
     def add_plays(self, plays: list[tuple], new_referees: list[tuple[str, str]] = ()) -> None:
         """Carga masiva en una sola transacción.
 
-        `plays` son tuplas (play_type, referee_id, features, called, description, match, date).
+        `plays` son tuplas (play_type, referee_id, features, called, description, match, date[, (url, inicio)]).
         `referee_id` puede ser un nombre de `new_referees`, que se crean en la misma transacción.
         """
         with self._lock, self._conn:
@@ -135,12 +150,19 @@ class Database:
             for name, country in new_referees:
                 cur = self._conn.execute("INSERT INTO referees (name, country) VALUES (?, ?)", (name, country))
                 ids[name] = cur.lastrowid
-            plays = [(t, ids.get(r, r), f, c, d, m, dt) for t, r, f, c, d, m, dt in plays]
-            self._conn.executemany(
-                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [(t, r, json.dumps(f), int(c), d, m, dt) for t, r, f, c, d, m, dt in plays],
-            )
+            for play in plays:
+                t, r, f, c, d, m, dt = play[:7]
+                cur = self._conn.execute(
+                    "INSERT INTO plays (play_type, referee_id, features, called, description, match, date)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (t, ids.get(r, r), json.dumps(f), int(c), d, m, dt),
+                )
+                link = play[7] if len(play) > 7 else None  # (url, segundo de inicio)
+                if link:
+                    self._conn.execute(
+                        "INSERT INTO media (play_id, kind, url, start_seconds) VALUES (?, 'link', ?, ?)",
+                        (cur.lastrowid, link[0], link[1]),
+                    )
 
     def history(self, play_type: str | None = None) -> list[HistoricalPlay]:
         sql = "SELECT * FROM plays"
@@ -344,12 +366,67 @@ class Database:
                 " VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (row["play_type"], referee_id, row["features"], int(called), description, match, date),
             )
+            self._conn.execute("UPDATE media SET play_id = ? WHERE review_id = ?", (cur.lastrowid, review_id))
             self._conn.execute(
                 "UPDATE reviews SET final_called = ?, decided_at = datetime('now'), decided_by = ?,"
                 " play_id = ?, referee_id = ? WHERE id = ?",
                 (int(called), user_id, cur.lastrowid, referee_id, review_id),
             )
         return self.get_review(review_id)
+
+    # --- videos y fotos -------------------------------------------------
+    def add_media(
+        self,
+        kind: str,
+        created_by: int | None,
+        play_id: int | None = None,
+        review_id: int | None = None,
+        mime: str = "",
+        path: str = "",
+        url: str = "",
+        start_seconds: float = 0,
+        caption: str = "",
+    ) -> dict:
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "INSERT INTO media (play_id, review_id, kind, mime, path, url, start_seconds, caption, created_by)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (play_id, review_id, kind, mime, path, url, start_seconds, caption, created_by),
+            )
+        return self.get_media(cur.lastrowid)
+
+    def get_media(self, media_id: int) -> dict | None:
+        row = self._conn.execute("SELECT * FROM media WHERE id = ?", (media_id,)).fetchone()
+        return dict(row) if row else None
+
+    def media_for(self, play_ids: list[int] = (), review_id: int | None = None) -> list[dict]:
+        clauses, args = [], []
+        if play_ids:
+            clauses.append(f"play_id IN ({','.join('?' * len(play_ids))})")
+            args += list(play_ids)
+        if review_id is not None:
+            clauses.append("review_id = ?")
+            args.append(review_id)
+        if not clauses:
+            return []
+        rows = self._conn.execute(f"SELECT * FROM media WHERE {' OR '.join(clauses)} ORDER BY id", args)
+        return [dict(r) for r in rows]
+
+    def delete_media(self, media_id: int) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM media WHERE id = ?", (media_id,))
+
+    def get_play(self, play_id: int) -> dict | None:
+        row = self._conn.execute(
+            "SELECT p.*, r.name AS referee FROM plays p JOIN referees r ON r.id = p.referee_id WHERE p.id = ?",
+            (play_id,),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["features"] = json.loads(d["features"])
+        d["called"] = bool(d["called"])
+        return d
 
     def count_pending_reviews(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM reviews WHERE final_called IS NULL").fetchone()[0]

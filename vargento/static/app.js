@@ -2,7 +2,11 @@
 
 const $ = (id) => document.getElementById(id);
 const pct = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
-const state = { user: null, types: [], type: null, values: {}, referees: [], review: null };
+const state = {
+  user: null, types: [], type: null, values: {}, referees: [], review: null,
+  reviewValues: null, reviewType: null, myMedia: [], mediaMode: "file",
+};
+const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"];
 const ROLES = { admin: "Administrador", analista: "Analista", operador: "Operador VAR", arbitro: "Árbitro" };
 const REC_CLASS = { COBRAR: "yes", "NO COBRAR": "no", DUDOSA: "doubt" };
 
@@ -192,6 +196,13 @@ function setupReviewForm() {
   types.id = "play-types";
   $("play-types").replaceWith(types);
   selectType(state.type.key);
+  const mode = segmented([["file", "Subir archivo"], ["link", "Pegar enlace"]], state.mediaMode, (m) => {
+    state.mediaMode = m;
+    $("new-media-file").hidden = m !== "file";
+    $("new-media-link").hidden = m !== "link";
+  });
+  mode.id = "media-mode";
+  $("media-mode").replaceWith(mode);
   $("result").hidden = true;
   $("empty").hidden = false;
 }
@@ -220,6 +231,12 @@ function selectType(key) {
   }
 }
 
+function mediaBadge(media) {
+  if (!media || !media.length) return null;
+  const video = media.some((m) => m.embed.type !== "image");
+  return el("span", { className: "has-media", title: `${media.length} archivo(s)` }, video ? "VIDEO" : "FOTO");
+}
+
 function renderPlays(listId, plays, emptyText) {
   const ul = $(listId);
   ul.replaceChildren();
@@ -228,12 +245,162 @@ function renderPlays(listId, plays, emptyText) {
     return;
   }
   for (const p of plays) {
-    ul.append(el("li", {},
+    ul.append(el("li", {}, el("button", { type: "button", onclick: () => openCompare(p.id) },
       el("span", { className: `tag ${p.called ? "yes" : "no"}` }, p.called ? "COBRÓ" : "NO COBRÓ"),
       el("div", {}, el("div", { className: "desc" }, p.description || "(sin descripción)"),
         el("div", { className: "meta" }, [p.referee, p.match, p.date].filter(Boolean).join(" · "))),
-      el("span", { className: "sim", title: "Similitud con la jugada actual" }, pct(p.similarity))));
+      el("span", { className: "right" }, mediaBadge(p.media),
+        el("span", { className: "sim", title: "Similitud con la jugada en revisión" }, pct(p.similarity))))));
   }
+}
+
+// ---------- videos y fotos ----------
+
+function mediaItemView(item) {
+  const e = item.embed;
+  if (e.type === "image") return el("img", { src: e.src, alt: item.caption || "Foto de la jugada", loading: "lazy" });
+  if (e.type === "video") return el("video", { src: e.src, controls: true, preload: "metadata", playsInline: true });
+  if (e.type === "iframe") {
+    return el("iframe", {
+      src: e.src, title: item.caption || "Video de la jugada", allowFullscreen: true, loading: "lazy",
+      allow: "encrypted-media; picture-in-picture; fullscreen", referrerPolicy: "strict-origin-when-cross-origin",
+    });
+  }
+  return el("div", { className: "media-link" }, el("a", { href: e.src, target: "_blank", rel: "noopener noreferrer" }, "Abrir el video en otra pestaña ↗"));
+}
+
+/** Reproductor con selector si hay varios archivos. `target` permite agregar más ({review_id} o {play_id}). */
+function mediaGallery(items, { emptyText, target, onChange } = {}) {
+  const box = el("div");
+  const viewer = el("div");
+  const caption = el("div", { className: "media-caption" });
+  const show = (i) => {
+    const item = items[i];
+    viewer.replaceChildren(el("div", { className: "media-view" }, mediaItemView(item)));
+    caption.textContent = [item.caption, item.kind === "link" ? "enlace externo" : ""].filter(Boolean).join(" · ");
+    strip.querySelectorAll("button").forEach((b, j) => b.setAttribute("aria-pressed", String(i === j)));
+  };
+  const strip = el("div", { className: "media-strip" }, items.length > 1
+    ? items.map((m, i) => el("button", { type: "button", onclick: () => show(i) }, `${m.embed.type === "image" ? "Foto" : "Video"} ${i + 1}`))
+    : []);
+  if (items.length) {
+    box.append(viewer, strip, caption);
+    show(0);
+  } else {
+    box.append(el("div", { className: "media-empty" }, emptyText || "Sin video ni foto."));
+  }
+  if (target) box.append(addMediaControls(target, onChange));
+  return box;
+}
+
+async function uploadMedia(file, target) {
+  if (!MEDIA_TYPES.includes(file.type)) throw new Error("Formato no admitido. Usá JPG, PNG, WEBP, GIF, MP4, WEBM o MOV.");
+  const qs = new URLSearchParams({ ...target, caption: file.name.slice(0, 200) });
+  const res = await fetch(`/api/media/upload?${qs}`, { method: "POST", body: file, headers: { "Content-Type": file.type } });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Error ${res.status} al subir el archivo`);
+  }
+  return res.json();
+}
+
+async function linkMedia(url, start, target) {
+  const body = { ...target, url };
+  if (start !== "" && start != null) body.start_seconds = Number(start);
+  return post("/api/media/link", body);
+}
+
+function addMediaControls(target, onChange) {
+  const file = el("input", { type: "file", accept: MEDIA_TYPES.join(","), "aria-label": "Subir video o foto" });
+  const url = el("input", { type: "url", placeholder: "o pegá un enlace (YouTube, .mp4, .jpg…)" });
+  const start = el("input", { type: "number", min: 0, step: 1, placeholder: "Seg. inicio", "aria-label": "Segundo de inicio" });
+  const btn = el("button", { type: "button", className: "secondary" }, "Agregar");
+  btn.addEventListener("click", () => busy(btn, async () => {
+    if (file.files[0]) await uploadMedia(file.files[0], target);
+    else if (url.value.trim()) await linkMedia(url.value.trim(), start.value, target);
+    else throw new Error("Elegí un archivo o pegá un enlace.");
+    toast("Video/foto agregado.");
+    if (onChange) await onChange();
+  }));
+  return el("div", { className: "add-media" }, file, el("div", { className: "grid-url" }, url, start), btn);
+}
+
+async function refreshMyMedia() {
+  state.myMedia = (await api(`/api/reviews/${state.review.review_id}`)).media;
+  renderMyMedia();
+}
+
+function renderMyMedia() {
+  const canAdd = state.review && state.review.review_id;
+  $("my-media").replaceChildren(mediaGallery(state.myMedia, {
+    emptyText: "Sin video ni foto de esta jugada. Agregalo para compararla con las anteriores.",
+    target: canAdd && !state.myMedia.length ? { review_id: state.review.review_id } : null,
+    onChange: refreshMyMedia,
+  }));
+}
+
+// ---------- comparación lado a lado ----------
+
+function formatFeature(f, v) {
+  if (v == null) return "—";
+  if (f.kind === "bool") return v ? "Sí" : "No";
+  if (f.kind === "scale") return f.options[Math.round(v) - f.min] ?? String(v);
+  const unit = f.key.endsWith("_cm") ? " cm" : f.key.endsWith("_m") ? " m" : "";
+  return `${Number(v).toLocaleString("es-AR")}${unit}`;
+}
+
+async function openCompare(playId) {
+  const play = await api(`/api/plays/${playId}`).catch((err) => toast(err.message, true));
+  if (!play) return;
+  const type = state.types.find((t) => t.key === play.play_type);
+  const r = state.review;
+
+  $("compare-left").replaceChildren(
+    el("h3", {}, "En revisión", pill(REC_CLASS[r.recommendation], `${r.recommendation} · ${pct(r.probability_call)}`)),
+    el("div", { className: "compare-meta" }, r.referee ? r.referee.name : "Sin árbitro seleccionado"),
+    mediaGallery(state.myMedia, { emptyText: "Sin video de la jugada en revisión." }),
+  );
+
+  const renderRight = async () => {
+    const fresh = await api(`/api/plays/${playId}`);
+    $("compare-right").replaceChildren(
+      el("h3", {}, "Jugada anterior", pill(fresh.called ? "yes" : "no", fresh.called ? "COBRÓ" : "NO COBRÓ")),
+      el("div", { className: "compare-meta" }, [fresh.referee, fresh.match, fresh.date].filter(Boolean).join(" · ")),
+      el("div", { className: "compare-meta" }, fresh.description || ""),
+      mediaGallery(fresh.media, {
+        emptyText: can("manage_data") ? "Esta jugada no tiene video. Podés agregarlo:" : "Esta jugada todavía no tiene video ni foto.",
+        target: can("manage_data") ? { play_id: playId } : null,
+        onChange: async () => { await renderRight(); await refreshSimilarMedia(); },
+      }),
+    );
+  };
+  await renderRight();
+
+  const tbody = $("compare-table").querySelector("tbody");
+  tbody.replaceChildren(...type.features.map((f) => {
+    const now = state.reviewValues[f.key];
+    const before = play.features[f.key];
+    const same = Number(now) === Number(before);
+    return el("tr", { className: same ? "" : "diff" },
+      el("td", {}, f.label), el("td", {}, formatFeature(f, now)), el("td", {}, formatFeature(f, before)));
+  }));
+  $("compare-dialog").showModal();
+}
+
+$("compare-close").addEventListener("click", () => $("compare-dialog").close());
+$("compare-dialog").addEventListener("close", () => {
+  // Frena videos que hayan quedado reproduciéndose.
+  $("compare-dialog").querySelectorAll("video").forEach((v) => v.pause());
+  $("compare-dialog").querySelectorAll("iframe").forEach((f) => (f.src = f.src));
+});
+
+async function refreshSimilarMedia() {
+  // Vuelve a pedir los medios de las jugadas listadas (por si se agregó alguno).
+  for (const list of [state.review.similar_plays, state.review.referee_similar_plays]) {
+    for (const p of list) p.media = (await api(`/api/plays/${p.id}`)).media;
+  }
+  renderPlays("ref-plays", state.review.referee_similar_plays, "Este árbitro no tiene jugadas parecidas registradas.");
+  renderPlays("similar-plays", state.review.similar_plays, "No hay jugadas parecidas en el histórico.");
 }
 
 function renderResult(r) {
@@ -264,6 +431,7 @@ function renderResult(r) {
 
   renderPlays("ref-plays", r.referee_similar_plays, "Este árbitro no tiene jugadas parecidas registradas.");
   renderPlays("similar-plays", r.similar_plays, "No hay jugadas parecidas en el histórico.");
+  renderMyMedia();
 
   // Decisión final
   $("decision").hidden = !can("decide");
@@ -281,11 +449,28 @@ $("play-form").addEventListener("submit", (e) => {
   const btn = e.submitter || document.querySelector("#play-form .primary");
   busy(btn, async () => {
     const refereeId = $("referee").value;
+    const file = $("new-media-file").files[0];
+    const url = $("new-media-url").value.trim();
+    if (state.mediaMode === "file" && file && !MEDIA_TYPES.includes(file.type)) {
+      throw new Error("Formato no admitido. Usá JPG, PNG, WEBP, GIF, MP4, WEBM o MOV.");
+    }
     const r = await post("/api/predict", {
       play_type: state.type.key,
       referee_id: refereeId ? Number(refereeId) : null,
       features: state.values,
     });
+    state.reviewValues = { ...state.values };
+    state.myMedia = [];
+    const target = { review_id: r.review_id };
+    try {
+      if (state.mediaMode === "file" && file) state.myMedia.push(await uploadMedia(file, target));
+      else if (state.mediaMode === "link" && url) state.myMedia.push(await linkMedia(url, $("new-media-start").value, target));
+      $("new-media-file").value = "";
+      $("new-media-url").value = "";
+      $("new-media-start").value = "";
+    } catch (err) {
+      toast(`La probabilidad se calculó, pero el video no se pudo adjuntar: ${err.message}`, true);
+    }
     renderResult(r);
   });
 });

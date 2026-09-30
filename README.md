@@ -25,6 +25,7 @@ Variables de entorno:
 - `VARGENTO_DB`: ruta de la base (por defecto `vargento.db`).
 - `VARGENTO_SEED_DEMO=0`: arrancar con la base vacía, sin datos de demo (para usar datos reales).
 - `VARGENTO_ADMIN_USER` / `VARGENTO_ADMIN_PASSWORD`: usuario y clave del primer admin.
+- `VARGENTO_MEDIA_DIR`: carpeta de videos y fotos subidos (por defecto `media`).
 - `VARGENTO_SECURE_COOKIES=1`: cookies sólo por HTTPS (activar al publicarla en internet).
 
 ## Usuarios y roles
@@ -50,6 +51,24 @@ python -m vargento.users clave admin      # también: crear USUARIO ROL, listar
    jugada pasa al histórico, así el modelo aprende de cada revisión.
 3. **Historial**: muestra las revisiones y qué tan seguido la sugerencia coincidió
    con la decisión final.
+
+## Videos y fotos
+
+- **Jugada nueva**: en el formulario, "Video o foto de la jugada" permite subir un
+  archivo (JPG, PNG, WEBP, GIF, MP4, WEBM o MOV, hasta 300 MB) o pegar un enlace
+  (YouTube, Vimeo, o un `.mp4`/`.jpg` público) con el segundo donde empieza la jugada.
+  También se puede agregar después, desde el resultado.
+- **Comparar**: tocando cualquier jugada parecida se abre una vista lado a lado
+  con los dos videos y la tabla de atributos, resaltando lo que cambia.
+- **Histórico**: al registrar la decisión final, el video pasa con la jugada al
+  histórico. Los analistas pueden agregar videos a jugadas viejas desde la
+  comparación, o en el CSV con las columnas `video` y `video_inicio`.
+- Los archivos se guardan en la carpeta `media/` (o `VARGENTO_MEDIA_DIR`) y sólo
+  los ven usuarios con sesión iniciada.
+
+> **Derechos de imagen**: las imágenes de TV de los partidos tienen dueño. Para uso
+> comercial conviene enlazar a videos publicados oficialmente (YouTube de la liga,
+> de los clubes, etc.) en vez de subir copias.
 
 ## Cargar datos reales
 
@@ -126,6 +145,10 @@ principio de `model.py` (`ModelParams`) y se recalibran con datos reales desde l
 | POST | `/api/reviews/{id}/decision` | Registrar la decisión final |
 | GET | `/api/reviews`, `/api/reviews/stats` | Historial y acierto en revisiones reales |
 | POST | `/api/model/evaluate`, `/api/model/calibrate` | Evaluar / recalibrar el modelo |
+| GET | `/api/plays/{id}`, `/api/reviews/{id}` | Detalle de una jugada / revisión, con sus videos |
+| POST | `/api/media/upload?review_id=…` o `?play_id=…` | Subir video/foto (el cuerpo es el archivo, con su `Content-Type`) |
+| POST | `/api/media/link` | Adjuntar un enlace (`url`, `start_seconds`, `review_id` o `play_id`) |
+| GET/DELETE | `/api/media/{id}/file`, `/api/media/{id}` | Ver / borrar un archivo |
 | GET/POST/PATCH | `/api/users` | Gestión de usuarios (admin) |
 
 Ejemplo:
