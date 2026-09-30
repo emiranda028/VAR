@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VARgento</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="logo">VAR</span>gento</div>
+    <div class="sub">Probabilidad de cobro según jugadas similares y el criterio del árbitro</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel" aria-labelledby="form-title">
+      <h2 id="form-title">Jugada en revisión</h2>
+      <form id="play-form">
+        <label class="field">
+          <span>Árbitro</span>
+          <select id="referee" required></select>
+        </label>
+        <div class="field">
+          <span>Tipo de jugada</span>
+          <div id="play-types" class="segmented" role="radiogroup"></div>
+        </div>
+        <div id="features"></div>
+        <button type="submit" class="primary">Calcular probabilidad</button>
+      </form>
+    </section>
+
+    <section class="panel result" aria-live="polite" aria-labelledby="result-title">
+      <h2 id="result-title">Resultado</h2>
+      <div id="empty" class="empty">Cargá los datos de la jugada y calculá la probabilidad.</div>
+      <div id="result" hidden>
+        <div class="question" id="question"></div>
+        <div class="verdict" id="verdict"></div>
+        <div class="bar" aria-hidden="true">
+          <div class="bar-yes" id="bar-yes"></div>
+          <div class="bar-no" id="bar-no"></div>
+        </div>
+        <div class="bar-labels">
+          <span><b id="p-yes"></b> SÍ</span>
+          <span>NO <b id="p-no"></b></span>
+        </div>
+        <div class="confidence" id="confidence"></div>
+
+        <div class="stats">
+          <div class="stat"><div class="k">Jugadas similares</div><div class="v" id="s-general"></div><div class="d" id="s-general-n"></div></div>
+          <div class="stat"><div class="k">Este árbitro en comparables</div><div class="v" id="s-ref"></div><div class="d" id="s-ref-n"></div></div>
+          <div class="stat"><div class="k">Ajuste por árbitro</div><div class="v" id="s-adj"></div><div class="d" id="s-adj-d"></div></div>
+          <div class="stat"><div class="k">Promedio del tipo</div><div class="v" id="s-base"></div><div class="d">todas las jugadas</div></div>
+        </div>
+
+        <h3>Jugadas más parecidas del mismo árbitro</h3>
+        <ul class="plays" id="ref-plays"></ul>
+        <h3>Jugadas más parecidas (todos los árbitros)</h3>
+        <ul class="plays" id="similar-plays"></ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    Herramienta de apoyo: la decisión es siempre del árbitro. Los datos incluidos son de demostración.
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
