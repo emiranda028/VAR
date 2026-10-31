@@ -19,7 +19,7 @@ La primera vez crea `vargento.db` (SQLite) y la carga con 1600 jugadas de demo.
 Variables de entorno:
 
 - `VARGENTO_DB`: ruta de la base (por defecto `vargento.db`).
-- `VARGENTO_SEED_DEMO=0`: arrancar con la base vacía, sin datos de demo.
+- `VARGENTO_SEED_DEMO=0`: arrancar sin datos de demo (los lotes aprobados se cargan igual).
 - `VARGENTO_APROBADAS`: carpeta de lotes aprobados que se cargan al arrancar (por
   defecto `data/aprobadas/`; vacía desactiva la carga).
 

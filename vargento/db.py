@@ -52,11 +52,14 @@ class Database:
     def _migrar_origen(self) -> None:
         """Agrega `plays.origen` a bases viejas; las jugadas con fuentes quedan como 'real'."""
         columnas = {r["name"] for r in self._conn.execute("PRAGMA table_info(plays)")}
-        if "origen" in columnas:
-            return
         with self._lock, self._conn:
-            self._conn.execute("ALTER TABLE plays ADD COLUMN origen TEXT NOT NULL DEFAULT 'demo'")
-            self._conn.execute("UPDATE plays SET origen = 'real' WHERE description LIKE '%| Fuentes: http%'")
+            if "origen" not in columnas:
+                self._conn.execute("ALTER TABLE plays ADD COLUMN origen TEXT NOT NULL DEFAULT 'demo'")
+            # Se repite en cada arranque (es barato): si una migración anterior se cortó
+            # después del ALTER, las jugadas con fuentes igual terminan como 'real'.
+            self._conn.execute(
+                "UPDATE plays SET origen = 'real' WHERE origen = 'demo' AND description LIKE '%| Fuentes: http%'"
+            )
 
     def close(self) -> None:
         self._conn.close()
