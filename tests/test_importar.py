@@ -41,7 +41,7 @@ def db(tmp_path):
 def test_simulacion_no_toca_la_base(db):
     res = importar(db, [jugada()])
     assert len(res.validas) == 1 and res.cargadas == 0
-    assert res.arbitros_nuevos == {"Árbitro Real"}
+    assert list(res.arbitros_nuevos.values()) == ["Árbitro Real"]
     assert db.count_plays() == 0 and db.count_referees() == 0
 
 
@@ -57,7 +57,7 @@ def test_aplicar_crea_arbitro_y_guarda_fuentes(db):
 def test_reutiliza_arbitro_existente_sin_importar_mayusculas(db):
     db.add_referee("Árbitro Real")
     res = importar(db, [jugada(referee_name="árbitro real")], aplicar=True)
-    assert res.arbitros_nuevos == set() and db.count_referees() == 1
+    assert res.arbitros_nuevos == {} and db.count_referees() == 1
 
 
 def test_errores_duplicados_y_baja_confianza(db):
@@ -92,3 +92,39 @@ def test_cli(tmp_path, capsys):
     d = Database(base)
     assert d.count_plays() == 1
     d.close()
+
+
+def test_fuentes_tienen_que_ser_urls(db):
+    res = importar(db, [jugada(fuentes=[""]), jugada(fuentes=["ver el diario"]), jugada(fuentes=5)])
+    assert len(res.errores) == 3 and not res.validas
+    res = importar(db, [jugada(fuentes="https://x.com/n")], aplicar=True)
+    assert res.cargadas == 1
+    assert db.list_plays()[0]["description"] == "Min 34 | Fuentes: https://x.com/n"
+
+
+def test_arbitro_con_distinta_capitalizacion_cuenta_una_vez(db):
+    res = importar(db, [jugada(referee_name="Juan Pérez"), jugada(referee_name="JUAN PÉREZ", description="b")])
+    assert len(res.arbitros_nuevos) == 1
+    importar(db, [jugada(referee_name="Juan Pérez"), jugada(referee_name="JUAN PÉREZ", description="b")], aplicar=True)
+    assert db.count_referees() == 1
+
+
+def test_duplicada_aunque_cambie_la_fuente(db):
+    importar(db, [jugada()], aplicar=True)
+    res = importar(db, [jugada(fuentes=["https://otra.com/y"]), jugada(description="MIN 34")])
+    assert len(res.duplicadas) == 2 and not res.validas
+
+
+def test_confianza_sin_distinguir_mayusculas_y_valores_invalidos(db):
+    res = importar(db, [jugada(confianza="Baja"), jugada(description="x", confianza="segura")])
+    assert len(res.baja_confianza) == 1 and len(res.errores) == 1
+
+
+def test_simulacion_no_crea_la_base_y_cli_robusta(tmp_path, capsys):
+    archivo = tmp_path / "lote.jsonl"
+    archivo.write_text(jugada() + "\n", encoding="utf-8-sig")  # con BOM
+    base = tmp_path / "nueva.db"
+    assert main([str(archivo), "--db", str(base)]) == 0
+    assert not base.exists()
+    assert main([str(tmp_path / "no-existe.jsonl"), "--db", str(base)]) == 2
+    assert "No se pudo leer" in capsys.readouterr().err

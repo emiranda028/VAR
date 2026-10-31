@@ -139,13 +139,35 @@ class Database:
             out.append(d)
         return out
 
-    def play_exists(self, play_type: str, match: str, date: str, description: str) -> bool:
-        """True si ya hay una jugada igual (mismo tipo, partido, fecha y descripción)."""
-        row = self._conn.execute(
-            "SELECT 1 FROM plays WHERE play_type = ? AND match = ? AND date = ? AND description = ?",
-            (play_type, match, date, description),
-        ).fetchone()
-        return row is not None
+    def descriptions_for(self, play_type: str, match: str, date: str) -> list[str]:
+        """Descripciones de las jugadas ya cargadas con ese tipo, partido y fecha."""
+        rows = self._conn.execute(
+            "SELECT description FROM plays WHERE play_type = ? AND match = ? AND date = ?",
+            (play_type, match, date),
+        )
+        return [r[0] for r in rows]
+
+    def import_plays(self, plays: list[tuple]) -> int:
+        """Carga jugadas con el NOMBRE del árbitro, creando los que falten.
+
+        Tuplas (play_type, referee_name, features, called, description, match, date).
+        Todo ocurre en una sola transacción: si algo falla, no queda nada a medias.
+        """
+        with self._lock, self._conn:
+            ids = {r["name"].casefold(): r["id"] for r in self._conn.execute("SELECT id, name FROM referees")}
+            filas = []
+            for t, nombre, f, c, d, m, dt in plays:
+                clave = nombre.strip().casefold()
+                if clave not in ids:
+                    cur = self._conn.execute("INSERT INTO referees (name) VALUES (?)", (nombre.strip(),))
+                    ids[clave] = cur.lastrowid
+                filas.append((t, ids[clave], json.dumps(f), int(c), d, m, dt))
+            self._conn.executemany(
+                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                filas,
+            )
+        return len(filas)
 
     def count_plays(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM plays").fetchone()[0]
