@@ -54,6 +54,17 @@ class Database:
         row = self._conn.execute("SELECT * FROM referees WHERE id = ?", (referee_id,)).fetchone()
         return dict(row) if row else None
 
+    def get_referee_by_name(self, name: str) -> dict | None:
+        """Busca un árbitro por nombre sin distinguir mayúsculas (incluye tildes: Á = á)."""
+        buscado = name.strip().casefold()
+        for row in self._conn.execute("SELECT * FROM referees"):
+            if row["name"].casefold() == buscado:
+                return dict(row)
+        return None
+
+    def count_referees(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM referees").fetchone()[0]
+
     def list_referees(self) -> list[dict]:
         rows = self._conn.execute(
             """
@@ -127,6 +138,14 @@ class Database:
             d["called"] = bool(d["called"])
             out.append(d)
         return out
+
+    def play_exists(self, play_type: str, match: str, date: str, description: str) -> bool:
+        """True si ya hay una jugada igual (mismo tipo, partido, fecha y descripción)."""
+        row = self._conn.execute(
+            "SELECT 1 FROM plays WHERE play_type = ? AND match = ? AND date = ? AND description = ?",
+            (play_type, match, date, description),
+        ).fetchone()
+        return row is not None
 
     def count_plays(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM plays").fetchone()[0]

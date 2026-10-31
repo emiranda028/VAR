@@ -99,6 +99,15 @@ def test_api_record_play_and_errors(client):
     assert client.post("/api/predict", json=bad_ref).status_code == 404
 
 
+def test_health_reports_counts(client):
+    body = client.get("/api/health").json()
+    assert body["status"] == "ok"
+    assert body["plays"] == 800
+    assert body["referees"] > 0
+    client.post("/api/referees", json={"name": "Otro Árbitro"})
+    assert client.get("/api/health").json()["referees"] == body["referees"] + 1
+
+
 def test_ui_is_served(client):
     assert "VARgento" in client.get("/").text
     assert client.get("/static/app.js").status_code == 200
