@@ -66,7 +66,7 @@ def test_validate_features_rejects_missing_and_out_of_range():
 def client(tmp_path):
     db = Database(tmp_path / "test.db")
     seed(db, n_plays=800)
-    yield TestClient(create_app(db, seed_demo=False))
+    yield TestClient(create_app(db, seed_demo=False, aprobadas_dir=None))
     db.close()
 
 

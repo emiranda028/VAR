@@ -23,11 +23,20 @@ CREATE TABLE IF NOT EXISTS plays (
     called INTEGER NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     match TEXT NOT NULL DEFAULT '',
-    date TEXT NOT NULL DEFAULT ''
+    date TEXT NOT NULL DEFAULT '',
+    origen TEXT NOT NULL DEFAULT 'demo'
 );
 CREATE INDEX IF NOT EXISTS plays_type_idx ON plays(play_type);
 CREATE INDEX IF NOT EXISTS plays_referee_idx ON plays(referee_id);
 """
+
+ORIGENES = ("demo", "real")
+
+
+def _validar_origen(origen: str) -> str:
+    if origen not in ORIGENES:
+        raise ValueError(f"origen tiene que ser 'demo' o 'real' (vino {origen!r})")
+    return origen
 
 
 class Database:
@@ -38,6 +47,19 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(SCHEMA)
+        self._migrar_origen()
+
+    def _migrar_origen(self) -> None:
+        """Agrega `plays.origen` a bases viejas; las jugadas con fuentes quedan como 'real'."""
+        columnas = {r["name"] for r in self._conn.execute("PRAGMA table_info(plays)")}
+        with self._lock, self._conn:
+            if "origen" not in columnas:
+                self._conn.execute("ALTER TABLE plays ADD COLUMN origen TEXT NOT NULL DEFAULT 'demo'")
+            # Se repite en cada arranque (es barato): si una migración anterior se cortó
+            # después del ALTER, las jugadas con fuentes igual terminan como 'real'.
+            self._conn.execute(
+                "UPDATE plays SET origen = 'real' WHERE origen = 'demo' AND description LIKE '%| Fuentes: http%'"
+            )
 
     def close(self) -> None:
         self._conn.close()
@@ -85,21 +107,23 @@ class Database:
         description: str = "",
         match: str = "",
         date: str = "",
+        origen: str = "real",
     ) -> int:
+        _validar_origen(origen)
         with self._lock, self._conn:
             cur = self._conn.execute(
-                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (play_type, referee_id, json.dumps(features), int(called), description, match, date),
+                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date, origen)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (play_type, referee_id, json.dumps(features), int(called), description, match, date, origen),
             )
         return cur.lastrowid
 
     def add_plays(self, plays: list[tuple]) -> None:
-        """Carga masiva: tuplas (play_type, referee_id, features, called, description, match, date)."""
+        """Carga masiva de demo: tuplas (play_type, referee_id, features, called, description, match, date)."""
         with self._lock, self._conn:
             self._conn.executemany(
-                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date, origen)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 'demo')",
                 [(t, r, json.dumps(f), int(c), d, m, dt) for t, r, f, c, d, m, dt in plays],
             )
 
@@ -163,14 +187,16 @@ class Database:
                     ids[clave] = cur.lastrowid
                 filas.append((t, ids[clave], json.dumps(f), int(c), d, m, dt))
             self._conn.executemany(
-                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date, origen)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 'real')",
                 filas,
             )
         return len(filas)
 
-    def count_plays(self) -> int:
-        return self._conn.execute("SELECT COUNT(*) FROM plays").fetchone()[0]
+    def count_plays(self, origen: str | None = None) -> int:
+        if origen is None:
+            return self._conn.execute("SELECT COUNT(*) FROM plays").fetchone()[0]
+        return self._conn.execute("SELECT COUNT(*) FROM plays WHERE origen = ?", (origen,)).fetchone()[0]
 
     def referee_stats(self, referee_id: int) -> list[dict]:
         """Tasa de cobro del árbitro por tipo de jugada vs. el promedio general."""
