@@ -54,6 +54,17 @@ class Database:
         row = self._conn.execute("SELECT * FROM referees WHERE id = ?", (referee_id,)).fetchone()
         return dict(row) if row else None
 
+    def get_referee_by_name(self, name: str) -> dict | None:
+        """Busca un árbitro por nombre sin distinguir mayúsculas (incluye tildes: Á = á)."""
+        buscado = name.strip().casefold()
+        for row in self._conn.execute("SELECT * FROM referees"):
+            if row["name"].casefold() == buscado:
+                return dict(row)
+        return None
+
+    def count_referees(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM referees").fetchone()[0]
+
     def list_referees(self) -> list[dict]:
         rows = self._conn.execute(
             """
@@ -127,6 +138,36 @@ class Database:
             d["called"] = bool(d["called"])
             out.append(d)
         return out
+
+    def descriptions_for(self, play_type: str, match: str, date: str) -> list[str]:
+        """Descripciones de las jugadas ya cargadas con ese tipo, partido y fecha."""
+        rows = self._conn.execute(
+            "SELECT description FROM plays WHERE play_type = ? AND match = ? AND date = ?",
+            (play_type, match, date),
+        )
+        return [r[0] for r in rows]
+
+    def import_plays(self, plays: list[tuple]) -> int:
+        """Carga jugadas con el NOMBRE del árbitro, creando los que falten.
+
+        Tuplas (play_type, referee_name, features, called, description, match, date).
+        Todo ocurre en una sola transacción: si algo falla, no queda nada a medias.
+        """
+        with self._lock, self._conn:
+            ids = {r["name"].casefold(): r["id"] for r in self._conn.execute("SELECT id, name FROM referees")}
+            filas = []
+            for t, nombre, f, c, d, m, dt in plays:
+                clave = nombre.strip().casefold()
+                if clave not in ids:
+                    cur = self._conn.execute("INSERT INTO referees (name) VALUES (?)", (nombre.strip(),))
+                    ids[clave] = cur.lastrowid
+                filas.append((t, ids[clave], json.dumps(f), int(c), d, m, dt))
+            self._conn.executemany(
+                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                filas,
+            )
+        return len(filas)
 
     def count_plays(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM plays").fetchone()[0]

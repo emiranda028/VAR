@@ -84,6 +84,26 @@ curl -X POST localhost:8000/api/predict -H 'content-type: application/json' -d '
 
 Documentación interactiva en `/docs`.
 
+## Importar jugadas reales
+
+Las jugadas reales se preparan en `data/candidatas/*.jsonl` (una jugada por línea,
+con fuentes) y se cargan con:
+
+```bash
+python -m vargento.importar data/candidatas/lote.jsonl            # sólo simula
+python -m vargento.importar data/candidatas/lote.jsonl --aplicar  # carga en la base
+```
+
+Valida cada jugada contra `domain.py`, exige al menos una fuente, crea los árbitros
+que falten, omite duplicadas y deja afuera las de confianza baja (salvo
+`--incluir-baja`). El formato está en `.claude/agents/scout-datos.md`.
+
+## Equipo de IA
+
+El proyecto tiene un equipo de agentes de Claude Code (`.claude/agents/`):
+coordinador, desarrollador, scout-datos y revisor. Plan y guía de uso en
+`docs/equipo-ia/BLUEPRINT.md`.
+
 ## Próximos pasos
 
 - Cargar datos reales (informes arbitrales, revisiones VAR publicadas) con `POST /api/plays`.

@@ -99,6 +99,30 @@ def test_api_record_play_and_errors(client):
     assert client.post("/api/predict", json=bad_ref).status_code == 404
 
 
+def test_health_reports_counts(client):
+    body = client.get("/api/health").json()
+    assert body["status"] == "ok"
+    assert body["plays"] == 800
+    assert body["referees"] > 0
+    client.post("/api/referees", json={"name": "Otro Árbitro"})
+    assert client.get("/api/health").json()["referees"] == body["referees"] + 1
+
+
 def test_ui_is_served(client):
     assert "VARgento" in client.get("/").text
     assert client.get("/static/app.js").status_code == 200
+
+
+def test_validate_features_accepts_range_limits_and_rejects_beyond():
+    from vargento.domain import PLAY_TYPES
+
+    for pt in PLAY_TYPES.values():
+        base = {f.key: f.min for f in pt.features}
+        for f in pt.features:
+            if f.kind == "bool":
+                continue
+            for ok in (f.min, f.max):
+                assert validate_features(pt, {**base, f.key: ok})[f.key] == ok
+            for bad in (f.min - 0.01, f.max + 0.01):
+                with pytest.raises(ValueError):
+                    validate_features(pt, {**base, f.key: bad})

@@ -37,6 +37,13 @@ sin que la fuente lo diga explícitamente.
 - Sin fuente con URL, no hay jugada.
 - Si la fuente no permite saber la decisión final, descartá la jugada.
 - Si más de 2 atributos son inferidos, `confianza: "baja"`.
+- Antes de dar un atributo por inferido, buscá una segunda fuente que lo
+  describa. Priorizá los análisis arbitrales (por ejemplo, las notas "La lupa"),
+  los audios VAR oficiales y las explicaciones de la AFA/LPF: describen el
+  contacto mejor que las crónicas del partido. Meta: ≥ 50% del lote con
+  confianza media o alta.
+- `decision_campo` también va en `inferidos` si ninguna fuente dice
+  explícitamente qué se cobró antes de la revisión.
 - Describí la jugada con tus palabras; no copies textos largos de las fuentes.
 - Sólo datos de la jugada y del árbitro (figura pública en su función). Nada de
   datos personales privados.

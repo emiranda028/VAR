@@ -151,7 +151,12 @@ def create_app(db: Database | None = None, seed_demo: bool | None = None) -> Fas
 
     @app.get("/api/health")
     def health() -> dict:
-        return {"status": "ok", "version": __version__, "plays": db.count_plays()}
+        return {
+            "status": "ok",
+            "version": __version__,
+            "plays": db.count_plays(),
+            "referees": db.count_referees(),
+        }
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
