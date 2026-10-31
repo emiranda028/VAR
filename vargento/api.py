@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from pathlib import Path
@@ -17,6 +18,9 @@ from .domain import PLAY_TYPES, get_play_type, validate_features
 from .model import ScoredPlay, predict
 
 STATIC_DIR = Path(__file__).parent / "static"
+APROBADAS_DIR = Path(__file__).parent.parent / "data" / "aprobadas"
+_POR_DEFECTO = object()  # distingue "no se pasó aprobadas_dir" de None (desactivado)
+log = logging.getLogger("vargento")
 
 
 class RefereeIn(BaseModel):
@@ -38,7 +42,31 @@ class PlayIn(PredictIn):
     date: str = ""
 
 
-def create_app(db: Database | None = None, seed_demo: bool | None = None) -> FastAPI:
+def _carpeta_aprobadas(aprobadas_dir) -> Path | None:
+    if aprobadas_dir is _POR_DEFECTO:
+        aprobadas_dir = os.environ.get("VARGENTO_APROBADAS", APROBADAS_DIR) or None
+    return Path(aprobadas_dir) if aprobadas_dir else None
+
+
+def cargar_aprobadas(db: Database, carpeta: Path | None) -> None:
+    """Carga cada lote aprobado (*.jsonl) en orden alfabético; las duplicadas se omiten solas."""
+    if carpeta is None or not carpeta.is_dir():
+        return
+    from .importar import importar
+
+    for archivo in sorted(carpeta.glob("*.jsonl")):
+        try:
+            lineas = archivo.read_text(encoding="utf-8-sig").splitlines()
+            res = importar(db, lineas, aplicar=True, incluir_baja=True)
+            if res.errores:
+                log.warning("Lote %s con errores: %s", archivo.name, "; ".join(res.errores))
+        except Exception as exc:  # un lote roto no debe impedir el arranque
+            log.warning("No se pudo cargar el lote %s: %s", archivo.name, exc)
+
+
+def create_app(
+    db: Database | None = None, seed_demo: bool | None = None, aprobadas_dir=_POR_DEFECTO
+) -> FastAPI:
     if db is None:
         db = Database(os.environ.get("VARGENTO_DB", "vargento.db"))
     if seed_demo is None:
@@ -47,6 +75,7 @@ def create_app(db: Database | None = None, seed_demo: bool | None = None) -> Fas
         from .seed import seed
 
         seed(db)
+    cargar_aprobadas(db, _carpeta_aprobadas(aprobadas_dir))
 
     app = FastAPI(title="VARgento", version=__version__)
     app.state.db = db
@@ -155,6 +184,8 @@ def create_app(db: Database | None = None, seed_demo: bool | None = None) -> Fas
             "status": "ok",
             "version": __version__,
             "plays": db.count_plays(),
+            "plays_demo": db.count_plays("demo"),
+            "plays_real": db.count_plays("real"),
             "referees": db.count_referees(),
         }
 

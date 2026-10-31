@@ -20,6 +20,8 @@ Variables de entorno:
 
 - `VARGENTO_DB`: ruta de la base (por defecto `vargento.db`).
 - `VARGENTO_SEED_DEMO=0`: arrancar con la base vacía, sin datos de demo.
+- `VARGENTO_APROBADAS`: carpeta de lotes aprobados que se cargan al arrancar (por
+  defecto `data/aprobadas/`; vacía desactiva la carga).
 
 Tests:
 
@@ -70,6 +72,12 @@ principio de `model.py` y conviene recalibrarlos con datos reales.
 | GET | `/api/referees/{id}/stats` | Tasa de cobro del árbitro por tipo vs. promedio |
 | GET/POST | `/api/plays` | Listar / registrar jugadas con su decisión final |
 | POST | `/api/predict` | Probabilidad de cobro para una jugada |
+| GET | `/api/health` | Estado, versión y conteos: `plays`, `plays_demo`, `plays_real`, `referees` |
+
+Cada jugada tiene `origen`: `demo` (datos sintéticos del seed) o `real` (importada
+o registrada por `POST /api/plays`). `GET /api/plays` lo devuelve en cada ítem. Al
+abrir una base vieja se agrega la columna sola: las jugadas con fuentes
+(`| Fuentes: http...`) quedan como `real` y el resto como `demo`.
 
 Ejemplo:
 
@@ -97,6 +105,12 @@ python -m vargento.importar data/candidatas/lote.jsonl --aplicar  # carga en la 
 Valida cada jugada contra `domain.py`, exige al menos una fuente, crea los árbitros
 que falten, omite duplicadas y deja afuera las de confianza baja (salvo
 `--incluir-baja`). El formato está en `.claude/agents/scout-datos.md`.
+
+`data/aprobadas/` contiene **sólo lotes aprobados por el dueño** (copias de
+candidatas revisadas). Al arrancar, la app carga cada `*.jsonl` de esa carpeta en
+orden alfabético, incluidas las de confianza baja; las ya cargadas se omiten como
+duplicadas, así que reiniciar no duplica nada. Si un lote falla, se registra un
+aviso y la app arranca igual.
 
 ## Equipo de IA
 
