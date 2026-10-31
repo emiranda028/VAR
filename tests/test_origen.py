@@ -61,7 +61,11 @@ def test_arranque_con_lotes_aprobados_reales(tmp_path):
     db = Database(tmp_path / "t.db")
     client = TestClient(create_app(db, seed_demo=True, aprobadas_dir=APROBADAS_DIR))
     health = client.get("/api/health").json()
-    assert (health["plays_demo"], health["plays_real"], health["plays"]) == (1600, 10, 1610)
+    reales = sum(
+        1 for f in APROBADAS_DIR.glob("*.jsonl") for l in f.read_text(encoding="utf-8-sig").splitlines() if l.strip()
+    )
+    assert reales >= 25  # lote 1 (10) + lote 2 (15)
+    assert (health["plays_demo"], health["plays_real"], health["plays"]) == (1600, reales, 1600 + reales)
     items = client.get("/api/plays?limit=500").json()
     assert items and all(p["origen"] in {"demo", "real"} for p in items)
     db.close()

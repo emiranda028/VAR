@@ -10,6 +10,8 @@ Una línea por tarea. Metas del mes: ≥ 80% de tareas aprobadas en ≤ 1 ronda,
 | 2026-10-31 | Importador de jugadas reales | 0 | 2 (8 hallazgos corregidos) | sí | — |
 | 2026-10-31 | Prueba del revisor con bug sembrado (día 3) | 0 | 1 | detectado ✅ | — |
 | 2026-10-31 | Lote 1: 10 penales LPF 2024-2025 | 0 | — | 10/10 válidas, 10/10 confianza baja | — |
+| 2026-10-31 | Columna `origen` + carga automática de `data/aprobadas/` (PR #4) | 2 | 1 | sí | — |
+| 2026-10-31 | Lote 2: 23 jugadas → 15 cargadas (8 offside sin medida, apartados) | 3 | 1 | sí, 2 fechas corregidas | — |
 
 ## Lote 1: verificación y modelo (día 6)
 
@@ -26,6 +28,23 @@ que se cobraron por intervención del VAR sin haberse cobrado en el campo
 (Racing-Tigre, Central Córdoba-San Lorenzo, River-Banfield): en los datos
 sintéticos la decisión de campo pesa mucho y el modelo subestima esas
 correcciones. Hace falta más volumen real antes de recalibrar.
+
+## Lote 2 (cargado)
+
+- 15 jugadas: 7 manos, 3 penales, 5 rojas; 9/15 confianza media (meta ≥ 50% ✅).
+- El revisor verificó 8 contra sus fuentes: `called` y `decision_campo` coinciden en todas.
+- Corregido: Barracas-Huracán 2025-11-17 → 2025-11-16 (fecha de publicación tomada como fecha del partido).
+- Apartados: 8 offside con `distancia_cm` estimada → `data/candidatas/2026-10-31-lote2-offside-sin-medida.jsonl`.
+- Pendiente: abrir a mano la nota de El Gráfico de Central Córdoba-Boca (Cloudflare la bloquea).
+
+| Modelo evaluado sobre las 25 jugadas reales | Acierto | Log-loss |
+| --- | --- | --- |
+| Sólo datos demo | 15/25 | 0,589 |
+| Demo + las otras reales (leave-one-out) | 17/25 | 0,565 |
+
+Lectura: con jugadas reales el modelo acierta bastante menos que con las de demo (~80%).
+Los datos sintéticos no representan bien al VAR real; es la señal más clara hasta ahora
+de que hace falta recalibrar con datos reales cuando haya ~100.
 
 ## Retro (día 7)
 
