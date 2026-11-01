@@ -24,6 +24,7 @@ from .seed import seed
 PAQUETE = Path(__file__).parent
 MODULOS_PUROS = ("__init__.py", "domain.py", "model.py", "servicio.py")
 MARCA_ESTATICO = "<script>window.VARGENTO_ESTATICO = true;</script>\n  "
+MARCADOR = ".vargento-export"  # archivo propio: sólo se limpia una carpeta que lo tenga
 
 
 def _index_estatico(html: str) -> str:
@@ -39,14 +40,21 @@ def _escribir_json(ruta: Path, datos) -> None:
 
 
 def _es_exportacion_previa(carpeta: Path) -> bool:
-    return (carpeta / "index.html").is_file() and (carpeta / "datos").is_dir()
+    index = carpeta / "index.html"
+    return (
+        (carpeta / MARCADOR).is_file()
+        and (carpeta / "datos").is_dir()
+        and index.is_file()
+        and "VARGENTO_ESTATICO" in index.read_text(encoding="utf-8", errors="replace")
+    )
 
 
 def preparar_salida(salida: Path) -> None:
     """Deja `salida` vacía: la crea, o borra sólo su contenido si es una exportación previa.
 
-    Si existe, no está vacía y no parece una exportación (le falta index.html o
-    datos/), lanza ValueError sin borrar nada.
+    Si existe, no está vacía y no parece una exportación (le falta el marcador
+    `.vargento-export`, datos/ o un index.html con la bandera), lanza ValueError
+    sin borrar nada.
     """
     if salida.exists() and not salida.is_dir():
         raise ValueError(f"{salida} existe y no es una carpeta")
@@ -56,7 +64,8 @@ def preparar_salida(salida: Path) -> None:
         return
     if not _es_exportacion_previa(salida):
         raise ValueError(
-            f"{salida} no está vacía y no parece una exportación previa (falta index.html o datos/); "
+            f"{salida} no está vacía y no parece una exportación previa de VARgento "
+            f"(falta {MARCADOR}, datos/ o index.html con la bandera); "
             "elegí una carpeta vacía o nueva"
         )
     for hijo in contenido:
@@ -82,6 +91,7 @@ def exportar_base(db: Database, salida: Path) -> None:
     _escribir_json(salida / "datos" / "play-types.json", [t.to_dict() for t in PLAY_TYPES.values()])
     _escribir_json(salida / "datos" / "referees.json", db.list_referees())
     _escribir_json(salida / "datos" / "history.json", [asdict(p) for p in db.history()])
+    (salida / MARCADOR).write_text("Exportación de VARgento: esta carpeta se regenera entera.\n", encoding="utf-8")
 
 
 def exportar(salida: Path, aprobadas_dir=_POR_DEFECTO) -> None:

@@ -183,3 +183,33 @@ def test_no_borra_carpeta_que_no_es_exportacion(tmp_path, aprobadas, capsys, con
     assert main([str(salida)]) == 2
     assert "no parece una exportación previa" in capsys.readouterr().err
     assert sorted(p.name for p in salida.iterdir()) == antes
+
+
+def _carpeta(tmp_path: Path, archivos: dict[str, str]) -> Path:
+    salida = tmp_path / "ajena"
+    (salida / "datos").mkdir(parents=True)
+    for nombre, texto in archivos.items():
+        (salida / nombre).write_text(texto, encoding="utf-8")
+    return salida
+
+
+@pytest.mark.parametrize(
+    "archivos",
+    [
+        {"index.html": "mio", "notas.txt": "mio"},  # index sin bandera
+        {"index.html": "<script>window.VARGENTO_ESTATICO = true;</script>", "notas.txt": "mio"},  # sin marcador
+        {".vargento-export": "", "index.html": "mio", "notas.txt": "mio"},  # marcador pero index sin bandera
+    ],
+)
+def test_sin_marcador_y_bandera_no_borra_nada(tmp_path, aprobadas, capsys, archivos):
+    salida = _carpeta(tmp_path, archivos)
+    antes = sorted(str(p.relative_to(salida)) for p in salida.rglob("*"))
+    assert main([str(salida)]) == 2
+    assert "no parece una exportación previa" in capsys.readouterr().err
+    assert sorted(str(p.relative_to(salida)) for p in salida.rglob("*")) == antes
+    assert (salida / "notas.txt").read_text(encoding="utf-8") == "mio"
+
+
+def test_exportacion_escribe_marcador(exportado):
+    assert (exportado / ".vargento-export").is_file()
+
