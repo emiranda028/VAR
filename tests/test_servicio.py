@@ -17,16 +17,37 @@ HISTORIA = historia_desde_json(
 )
 
 
-def test_no_importa_web_ni_base():
-    arbol = ast.parse(Path(servicio.__file__).read_text(encoding="utf-8"))
+PROHIBIDOS = {"fastapi", "pydantic", "sqlite3", ".db", "vargento.db"}
+
+
+def _modulos_importados(codigo: str) -> set[str]:
+    """Módulos importados; en `from X import y` incluye también `X.y` (cubre `from . import db`)."""
     modulos = set()
-    for nodo in ast.walk(arbol):
+    for nodo in ast.walk(ast.parse(codigo)):
         if isinstance(nodo, ast.Import):
             modulos |= {a.name for a in nodo.names}
         elif isinstance(nodo, ast.ImportFrom):
-            modulos.add(("." * nodo.level) + (nodo.module or ""))
-    prohibidos = {"fastapi", "pydantic", "sqlite3", ".db", "vargento.db"}
-    assert not {m for m in modulos if m.split(".")[0] in prohibidos or m in prohibidos}
+            base = ("." * nodo.level) + (nodo.module or "")
+            modulos.add(base)
+            sep = "" if base.endswith(".") else "."
+            modulos |= {base + sep + a.name for a in nodo.names}
+    return modulos
+
+
+def _prohibidos(codigo: str) -> set[str]:
+    return {m for m in _modulos_importados(codigo) if m.split(".")[0] in PROHIBIDOS or m in PROHIBIDOS}
+
+
+def test_no_importa_web_ni_base():
+    assert not _prohibidos(Path(servicio.__file__).read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    "linea", ["from . import db", "from .db import Database", "from vargento import db", "import sqlite3", "from fastapi import FastAPI"]
+)
+def test_detector_de_imports_prohibidos(linea):
+    codigo = Path(servicio.__file__).read_text(encoding="utf-8") + "\n" + linea + "\n"
+    assert _prohibidos(codigo)
 
 
 def test_historia_desde_json_arma_jugadas():
