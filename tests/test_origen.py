@@ -1,3 +1,4 @@
+import json
 import shutil
 import sqlite3
 
@@ -38,6 +39,7 @@ def test_migracion_de_base_vieja(tmp_path):
     for _ in range(2):  # reabrir no falla ni cambia nada
         db = Database(ruta)
         assert _origenes(db) == ["demo", "real"]
+        assert [r[0] for r in db._conn.execute("SELECT video FROM plays ORDER BY id")] == [None, None]
         db.close()
 
 
@@ -119,3 +121,23 @@ def test_copia_aprobada_es_identica_a_la_candidata():
     candidata = APROBADAS_DIR.parent / "candidatas" / LOTE_1
     assert candidata.exists()
     assert (APROBADAS_DIR / LOTE_1).read_bytes() == candidata.read_bytes()
+
+
+def test_relanzar_con_video_agrega_el_video_sin_duplicar(tmp_path):
+    carpeta = tmp_path / "aprobadas"
+    carpeta.mkdir()
+    lineas = (APROBADAS_DIR / LOTE_1).read_text(encoding="utf-8-sig").splitlines()
+    (carpeta / LOTE_1).write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    db = Database(tmp_path / "t.db")
+    create_app(db, seed_demo=False, aprobadas_dir=carpeta)
+    reales = db.count_plays("real")
+    primera = json.loads(lineas[0])
+    primera["video"] = {"url": "https://youtu.be/dQw4w9WgXcQ?si=abc", "inicio": 12}
+    lineas[0] = json.dumps(primera, ensure_ascii=False)
+    (carpeta / LOTE_1).write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    create_app(db, seed_demo=False, aprobadas_dir=carpeta)
+    assert db.count_plays("real") == reales
+    videos = [tuple(r) for r in db._conn.execute("SELECT match, date, video FROM plays WHERE video IS NOT NULL")]
+    canonica = '{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","inicio":12}'
+    assert videos == [(primera["match"], primera["date"], canonica)]
+    db.close()
