@@ -1,0 +1,103 @@
+import json
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from vargento.api import cargar_aprobadas, create_app
+from vargento.db import Database
+from vargento.domain import PLAY_TYPES
+from vargento.exportar_web import main
+from vargento.seed import seed
+from vargento.servicio import historia_desde_json, respuesta_prediccion
+
+RAIZ = Path(__file__).parent.parent
+OFFSIDE = {"decision_campo": 0.0, "distancia_cm": 4.0, "interfiere_juego": 1.0, "jugada_deliberada_rival": 0.0}
+LOTE = {
+    "play_type": "offside",
+    "referee_name": "Árbitro Exportado",
+    "called": True,
+    "features": OFFSIDE,
+    "match": "Equipo A vs Equipo B",
+    "date": "2025-05-01",
+    "description": "Jugada de prueba para el exportador.",
+    "fuentes": ["https://example.com/nota"],
+    "confianza": "alta",
+}
+
+
+def _leer(carpeta: Path, nombre: str):
+    return json.loads((carpeta / "datos" / nombre).read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def aprobadas(tmp_path, monkeypatch):
+    carpeta = tmp_path / "aprobadas"
+    carpeta.mkdir()
+    (carpeta / "lote.jsonl").write_text(json.dumps(LOTE, ensure_ascii=False) + "\n", encoding="utf-8")
+    monkeypatch.setenv("VARGENTO_APROBADAS", str(carpeta))
+    return carpeta
+
+
+@pytest.fixture
+def exportado(tmp_path, aprobadas):
+    salida = tmp_path / "sitio" / "anidada"  # la carpeta todavía no existe
+    assert main([str(salida)]) == 0
+    return salida
+
+
+def test_escribe_todos_los_archivos(exportado):
+    for ruta in (
+        "index.html", "app.js", "styles.css",
+        "py/vargento/__init__.py", "py/vargento/domain.py", "py/vargento/model.py", "py/vargento/servicio.py",
+        "datos/play-types.json", "datos/referees.json", "datos/history.json",
+    ):
+        assert (exportado / ruta).is_file(), ruta
+    assert (exportado / "app.js").read_bytes() == (RAIZ / "vargento" / "static" / "app.js").read_bytes()
+    assert (exportado / "py/vargento/servicio.py").read_bytes() == (RAIZ / "vargento" / "servicio.py").read_bytes()
+
+
+def test_index_apunta_a_rutas_relativas(exportado):
+    html = (exportado / "index.html").read_text(encoding="utf-8")
+    assert "/static/" not in html
+    assert "VARGENTO_ESTATICO" in html
+    assert html.index("VARGENTO_ESTATICO") < html.index('src="app.js"')
+    assert 'href="styles.css"' in html
+
+
+def test_play_types_y_arbitros(exportado):
+    assert _leer(exportado, "play-types.json") == [t.to_dict() for t in PLAY_TYPES.values()]
+    arbitros = _leer(exportado, "referees.json")
+    history = _leer(exportado, "history.json")
+    assert all(set(r) == {"id", "name", "country", "plays"} for r in arbitros)
+    assert sum(r["plays"] for r in arbitros) == len(history)
+    assert any(r["name"] == "Árbitro Exportado" for r in arbitros)  # se cargó el lote aprobado
+    assert set(history[0]) == {"id", "play_type", "referee_id", "features", "called", "description", "match", "date"}
+    assert "Árbitro Exportado" in (exportado / "datos" / "referees.json").read_text(encoding="utf-8")
+
+
+def test_equivale_a_la_api(exportado, aprobadas, tmp_path):
+    arbitros = _leer(exportado, "referees.json")
+    history = historia_desde_json(_leer(exportado, "history.json"))
+    db = Database(tmp_path / "misma.db")
+    seed(db)
+    cargar_aprobadas(db, aprobadas)
+    client = TestClient(create_app(db, seed_demo=False, aprobadas_dir=None))
+    try:
+        for ref_id in (arbitros[0]["id"], None):
+            esperado = client.post(
+                "/api/predict", json={"play_type": "offside", "referee_id": ref_id, "features": OFFSIDE}
+            ).json()
+            assert respuesta_prediccion("offside", OFFSIDE, ref_id, history, arbitros) == esperado
+    finally:
+        db.close()
+
+
+def test_no_toca_vargento_db_ni_data(tmp_path, aprobadas):
+    def huella() -> dict:
+        rutas = [RAIZ / "vargento.db", *sorted((RAIZ / "data").rglob("*"))]
+        return {str(p): (p.stat().st_mtime_ns, p.stat().st_size) for p in rutas if p.exists()}
+
+    antes = huella()
+    assert main([str(tmp_path / "out")]) == 0
+    assert huella() == antes
