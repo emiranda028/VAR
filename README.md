@@ -147,8 +147,11 @@ datos salen de JSON exportados con `python -m vargento.exportar_web`. El workflo
 `.github/workflows/pages.yml` corre los tests, exporta el sitio y lo publica en
 cada push a `main`.
 
-Limitaciones: es **sólo consulta**; los datos de demo son **sintéticos** y no se
-registran jugadas (no hay `POST /api/plays` ni estadísticas). La primera carga
+Limitaciones: es **sólo consulta** y no se registran jugadas (no hay
+`POST /api/plays` ni estadísticas). Incluye las jugadas reales aprobadas de la LPF
+(`data/aprobadas/`, con fuente) junto a los datos de demo **sintéticos**; el aviso
+de la página lo dice: "Versión de demostración: sólo consulta. Incluye jugadas
+reales de la LPF con fuente y datos de demo sintéticos." La primera carga
 baja Pyodide desde jsDelivr y tarda unos segundos ("Cargando modelo…").
 
 Probar local:

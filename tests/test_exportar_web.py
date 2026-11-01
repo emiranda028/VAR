@@ -103,7 +103,7 @@ def test_no_toca_vargento_db_ni_data(tmp_path, aprobadas):
     assert huella() == antes
 
 
-AVISO = "Versión de demostración: sólo consulta; los datos de demo son sintéticos"
+AVISO = "Versión de demostración: sólo consulta. Incluye jugadas reales de la LPF con fuente y datos de demo sintéticos."
 
 
 def test_exportado_tiene_bandera_aviso_y_pyodide(exportado):
