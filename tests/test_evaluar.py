@@ -1,5 +1,7 @@
+import hashlib
 import json
 import math
+import sqlite3
 
 import pytest
 
@@ -75,6 +77,10 @@ def test_leave_one_out_excluye_la_propia_jugada(tmp_path):
     assert loo["dudosas"] == 0
 
 
+def _hash(ruta) -> str:
+    return hashlib.sha256(ruta.read_bytes()).hexdigest()
+
+
 def _estado(db: Database) -> tuple:
     return db.count_plays(), db.count_plays("real"), db.list_referees()
 
@@ -84,6 +90,7 @@ def test_cli_db_json_no_modifica_la_base(tmp_path, capsys):
     db = _base_minima(ruta)
     antes = _estado(db)
     db.close()
+    hash_antes = _hash(ruta)
 
     assert main(["--db", str(ruta), "--json"]) == 0
     salida = capsys.readouterr().out
@@ -93,15 +100,78 @@ def test_cli_db_json_no_modifica_la_base(tmp_path, capsys):
     for v in datos["variantes"].values():
         assert set(v) == {"total", "por_tipo"}
         assert set(v["total"]) == {"n", "aciertos", "acierto", "log_loss", "dudosas", "tasa_dudosa"}
-    db = Database(ruta)
-    assert datos == evaluar(db)
-    assert _estado(db) == antes
-    db.close()
 
     assert main(["--db", str(ruta)]) == 0
     texto = capsys.readouterr().out
     assert "Sólo demo" in texto and "Leave-one-out" in texto
     assert "3,800" in texto  # log-loss total sólo demo con 3 decimales y coma
+    assert _hash(ruta) == hash_antes  # el archivo queda idéntico byte a byte
+
+    db = Database(ruta)
+    assert datos == evaluar(db)
+    assert _estado(db) == antes
+    db.close()
+
+
+ESQUEMA_VIEJO = """
+CREATE TABLE referees (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+                       country TEXT NOT NULL DEFAULT '');
+CREATE TABLE plays (id INTEGER PRIMARY KEY AUTOINCREMENT, play_type TEXT NOT NULL,
+                    referee_id INTEGER NOT NULL REFERENCES referees(id), features TEXT NOT NULL,
+                    called INTEGER NOT NULL, description TEXT NOT NULL DEFAULT '',
+                    match TEXT NOT NULL DEFAULT '', date TEXT NOT NULL DEFAULT '');
+INSERT INTO referees (name) VALUES ('Árbitro B');
+"""
+
+
+def test_cli_db_vieja_sin_origen_no_se_toca_y_se_evalua_la_copia(tmp_path, capsys):
+    ruta = tmp_path / "vieja.db"
+    con = sqlite3.connect(ruta)
+    con.executescript(ESQUEMA_VIEJO)
+    # Una jugada con fuentes: al migrar la copia queda como 'real'.
+    con.execute(
+        "INSERT INTO plays (play_type, referee_id, features, called, description) VALUES (?, 1, ?, 0, ?)",
+        ("mano", json.dumps(_feats("mano")), "Min 3 | Fuentes: https://ejemplo.com/nota"),
+    )
+    con.commit()
+    con.close()
+    hash_antes = _hash(ruta)
+
+    assert main(["--db", str(ruta), "--json"]) == 0
+    datos = json.loads(capsys.readouterr().out)
+    assert datos["n_reales"] == 1
+    # Sin otras jugadas: probabilidad 0,5, no cobrada → falla y es DUDOSA.
+    total = datos["variantes"]["solo_demo"]["total"]
+    assert total["aciertos"] == 0 and total["dudosas"] == 1
+    assert total["log_loss"] == pytest.approx(math.log(2))
+
+    assert _hash(ruta) == hash_antes
+    con = sqlite3.connect(ruta)
+    columnas = {r[1] for r in con.execute("PRAGMA table_info(plays)")}
+    con.close()
+    assert "origen" not in columnas
+
+
+def test_cli_sin_db_respeta_vargento_aprobadas(tmp_path, monkeypatch, capsys):
+    # Vacía = sin lotes: sólo demo, no hay reales.
+    monkeypatch.setenv("VARGENTO_APROBADAS", "")
+    assert main([]) == 1
+    assert "No hay jugadas reales para evaluar" in capsys.readouterr().err
+
+    # Una carpeta propia con un lote de una jugada real.
+    carpeta = tmp_path / "aprobadas"
+    carpeta.mkdir()
+    jugada = {
+        "play_type": "penal", "referee_name": "Árbitro Real", "called": True,
+        "features": _feats("penal"), "match": "A vs B", "date": "2025-08-17",
+        "description": "Min 34", "fuentes": ["https://ejemplo.com/nota"], "confianza": "alta",
+    }
+    (carpeta / "lote.jsonl").write_text(json.dumps(jugada) + "\n", encoding="utf-8")
+    monkeypatch.setenv("VARGENTO_APROBADAS", str(carpeta))
+    assert main(["--json"]) == 0
+    datos = json.loads(capsys.readouterr().out)
+    assert datos["n_reales"] == 1
+    assert datos["variantes"]["solo_demo"]["por_tipo"]["penal"]["n"] == 1
 
 
 def test_cli_db_inexistente_da_2_y_no_crea_archivo(tmp_path, capsys):

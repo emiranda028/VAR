@@ -130,6 +130,10 @@ probabilidad recortada a [0,001; 0,999]) y tasa de DUDOSA, en dos variantes:
 - **Leave-one-out**: cada jugada real se predice con todo el histórico menos ella
   misma (incluye las demás reales). Mide cuánto aportan las reales.
 
+Con `--db` se evalúa una copia temporal del archivo (si es una base vieja, la
+migración se aplica sólo a la copia): el original queda idéntico. Sin `--db` se
+respeta `VARGENTO_APROBADAS` igual que la app (vacía = sin lotes).
+
 Si `--db` no existe, sale con código 2 sin crear el archivo; si no hay jugadas
 reales, sale con código 1.
 

@@ -12,7 +12,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from .db import Database
@@ -33,6 +35,18 @@ def base_por_defecto(carpeta: Path | None) -> Database:
     seed(db)
     cargar_aprobadas(db, carpeta)
     return db
+
+
+def evaluar_copia(ruta: Path) -> dict:
+    """Evalúa una copia temporal de la base: abrirla migra el esquema y el original no se toca."""
+    with tempfile.TemporaryDirectory() as carpeta:
+        copia = Path(carpeta) / "copia.db"
+        shutil.copy(ruta, copia)
+        db = Database(copia)
+        try:
+            return evaluar(db)
+        finally:
+            db.close()
 
 
 def _metricas(resultados: list[tuple[float, bool, bool]]) -> dict:
@@ -119,15 +133,16 @@ def main(argv: list[str] | None = None) -> int:
         if not Path(args.db).is_file():
             print(f"No existe la base {args.db}", file=sys.stderr)
             return 2
-        db = Database(args.db)
+        resultado = evaluar_copia(Path(args.db))
     else:
-        from .api import APROBADAS_DIR
+        from .api import _POR_DEFECTO, _carpeta_aprobadas
 
-        db = base_por_defecto(APROBADAS_DIR)
-    try:
-        resultado = evaluar(db)
-    finally:
-        db.close()
+        # Misma regla que la app: VARGENTO_APROBADAS (vacía = sin lotes) o data/aprobadas/.
+        db = base_por_defecto(_carpeta_aprobadas(_POR_DEFECTO))
+        try:
+            resultado = evaluar(db)
+        finally:
+            db.close()
 
     if resultado["n_reales"] == 0:
         print("No hay jugadas reales para evaluar", file=sys.stderr)
