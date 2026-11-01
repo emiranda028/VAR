@@ -149,3 +149,37 @@ def test_workflow_pages_es_yaml_valido():
     deploy = wf["jobs"]["deploy"]
     assert deploy["needs"] == "build" and deploy["environment"]["name"] == "github-pages"
     assert deploy["steps"][0]["uses"] == "actions/deploy-pages@v4" and deploy["steps"][0]["id"] == "deployment"
+
+
+def test_reexportar_borra_archivos_viejos_sin_tocar_afuera(exportado):
+    (exportado / "viejo.txt").write_text("x", encoding="utf-8")
+    (exportado / "py" / "vargento" / "api.py").write_text("x", encoding="utf-8")
+    vecino = exportado.parent / "vecino.txt"
+    vecino.write_text("no tocar", encoding="utf-8")
+    assert main([str(exportado)]) == 0
+    assert not (exportado / "viejo.txt").exists()
+    assert not (exportado / "py" / "vargento" / "api.py").exists()
+    assert (exportado / "index.html").is_file()
+    assert vecino.read_text(encoding="utf-8") == "no tocar"
+
+
+def test_carpeta_vacia_existente_se_usa(tmp_path, aprobadas):
+    salida = tmp_path / "vacia"
+    salida.mkdir()
+    assert main([str(salida)]) == 0
+    assert (salida / "index.html").is_file()
+
+
+@pytest.mark.parametrize("contenido", [("notas.txt",), ("index.html",), ("datos/",)])
+def test_no_borra_carpeta_que_no_es_exportacion(tmp_path, aprobadas, capsys, contenido):
+    salida = tmp_path / "otra"
+    salida.mkdir()
+    for nombre in contenido:
+        if nombre.endswith("/"):
+            (salida / nombre).mkdir()
+        else:
+            (salida / nombre).write_text("mío", encoding="utf-8")
+    antes = sorted(p.name for p in salida.iterdir())
+    assert main([str(salida)]) == 2
+    assert "no parece una exportación previa" in capsys.readouterr().err
+    assert sorted(p.name for p in salida.iterdir()) == antes

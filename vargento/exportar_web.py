@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import sys
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
@@ -37,8 +38,37 @@ def _escribir_json(ruta: Path, datos) -> None:
     ruta.write_text(json.dumps(datos, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
 
+def _es_exportacion_previa(carpeta: Path) -> bool:
+    return (carpeta / "index.html").is_file() and (carpeta / "datos").is_dir()
+
+
+def preparar_salida(salida: Path) -> None:
+    """Deja `salida` vacía: la crea, o borra sólo su contenido si es una exportación previa.
+
+    Si existe, no está vacía y no parece una exportación (le falta index.html o
+    datos/), lanza ValueError sin borrar nada.
+    """
+    if salida.exists() and not salida.is_dir():
+        raise ValueError(f"{salida} existe y no es una carpeta")
+    salida.mkdir(parents=True, exist_ok=True)
+    contenido = list(salida.iterdir())
+    if not contenido:
+        return
+    if not _es_exportacion_previa(salida):
+        raise ValueError(
+            f"{salida} no está vacía y no parece una exportación previa (falta index.html o datos/); "
+            "elegí una carpeta vacía o nueva"
+        )
+    for hijo in contenido:
+        if hijo.is_dir() and not hijo.is_symlink():
+            shutil.rmtree(hijo)
+        else:
+            hijo.unlink()
+
+
 def exportar_base(db: Database, salida: Path) -> None:
-    """Escribe el sitio estático en `salida` a partir de una base ya cargada."""
+    """Escribe el sitio estático en `salida` (limpia) a partir de una base ya cargada."""
+    preparar_salida(salida)
     (salida / "py" / "vargento").mkdir(parents=True, exist_ok=True)
     (salida / "datos").mkdir(parents=True, exist_ok=True)
 
@@ -70,7 +100,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Exporta VARgento como sitio estático.")
     parser.add_argument("carpeta_salida", type=Path)
     args = parser.parse_args(argv)
-    exportar(args.carpeta_salida)
+    try:
+        exportar(args.carpeta_salida)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
     print(f"Sitio estático exportado en {args.carpeta_salida}")
     return 0
 
