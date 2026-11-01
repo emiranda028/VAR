@@ -198,6 +198,11 @@ class Database:
             return self._conn.execute("SELECT COUNT(*) FROM plays").fetchone()[0]
         return self._conn.execute("SELECT COUNT(*) FROM plays WHERE origen = ?", (origen,)).fetchone()[0]
 
+    def ids_por_origen(self, origen: str) -> set[int]:
+        """Ids de las jugadas con ese origen ('demo' o 'real')."""
+        _validar_origen(origen)
+        return {r[0] for r in self._conn.execute("SELECT id FROM plays WHERE origen = ?", (origen,))}
+
     def referee_stats(self, referee_id: int) -> list[dict]:
         """Tasa de cobro del árbitro por tipo de jugada vs. el promedio general."""
         rows = self._conn.execute(
