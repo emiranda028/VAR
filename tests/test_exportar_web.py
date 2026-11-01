@@ -213,3 +213,10 @@ def test_sin_marcador_y_bandera_no_borra_nada(tmp_path, aprobadas, capsys, archi
 def test_exportacion_escribe_marcador(exportado):
     assert (exportado / ".vargento-export").is_file()
 
+
+def test_symlink_roto_da_error_claro(tmp_path, aprobadas, capsys):
+    enlace = tmp_path / "roto"
+    enlace.symlink_to(tmp_path / "no-existe")
+    assert main([str(enlace)]) == 2
+    assert "enlace simbólico roto" in capsys.readouterr().err
+    assert not (tmp_path / "no-existe").exists()

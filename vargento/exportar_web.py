@@ -56,6 +56,8 @@ def preparar_salida(salida: Path) -> None:
     `.vargento-export`, datos/ o un index.html con la bandera), lanza ValueError
     sin borrar nada.
     """
+    if salida.is_symlink() and not salida.exists():
+        raise ValueError(f"{salida} es un enlace simbólico roto")
     if salida.exists() and not salida.is_dir():
         raise ValueError(f"{salida} existe y no es una carpeta")
     salida.mkdir(parents=True, exist_ok=True)
@@ -112,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         exportar(args.carpeta_salida)
-    except ValueError as exc:
+    except (ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
     print(f"Sitio estático exportado en {args.carpeta_salida}")
