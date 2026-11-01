@@ -16,6 +16,88 @@ async function api(path, options) {
   return res.json();
 }
 
+// --- Modo estático (GitHub Pages): el modelo corre en el navegador con Pyodide ---
+const ESTATICO = window.VARGENTO_ESTATICO === true;
+const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
+const PYODIDE_JS = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js";
+const PY_DIR = "/vargento_py";
+const PY_MODULOS = ["__init__.py", "domain.py", "model.py", "servicio.py"];
+const estatico = { playTypes: null, referees: null, pyodide: null };
+
+const PY_PUENTE = `
+import json
+from vargento.servicio import historia_desde_json, respuesta_prediccion
+
+_HISTORIA = historia_desde_json(json.loads(_historia_json))
+_ARBITROS = json.loads(_arbitros_json)
+del _historia_json, _arbitros_json
+
+def _predecir(cuerpo_json):
+    c = json.loads(cuerpo_json)
+    try:
+        r = respuesta_prediccion(c["play_type"], c["features"], c.get("referee_id"), _HISTORIA, _ARBITROS)
+    except (ValueError, LookupError) as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"ok": r})
+`;
+
+async function textoRelativo(ruta) {
+  const res = await fetch(ruta);
+  if (!res.ok) throw new Error(`No se pudo leer ${ruta} (${res.status})`);
+  return res.text();
+}
+
+function cargarScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error(`No se pudo cargar ${src}`));
+    document.head.appendChild(s);
+  });
+}
+
+async function cargarDatosEstaticos() {
+  const [types, refs] = await Promise.all([
+    textoRelativo("datos/play-types.json"),
+    textoRelativo("datos/referees.json"),
+  ]);
+  estatico.playTypes = JSON.parse(types);
+  estatico.referees = JSON.parse(refs);
+}
+
+async function cargarPyodide() {
+  const [, historia, ...fuentes] = await Promise.all([
+    cargarScript(PYODIDE_JS),
+    textoRelativo("datos/history.json"),
+    ...PY_MODULOS.map((m) => textoRelativo(`py/vargento/${m}`)),
+  ]);
+  const py = await loadPyodide({ indexURL: PYODIDE_URL });
+  py.FS.mkdirTree(`${PY_DIR}/vargento`);
+  PY_MODULOS.forEach((m, i) => py.FS.writeFile(`${PY_DIR}/vargento/${m}`, fuentes[i]));
+  py.runPython(`import sys\nsys.path.insert(0, ${JSON.stringify(PY_DIR)})`);
+  py.globals.set("_historia_json", historia);
+  py.globals.set("_arbitros_json", JSON.stringify(estatico.referees));
+  py.runPython(PY_PUENTE);
+  estatico.pyodide = py;
+}
+
+async function apiEstatica(path, options) {
+  if (path === "/api/play-types") return estatico.playTypes;
+  if (path === "/api/referees") return estatico.referees;
+  if (path === "/api/predict") {
+    const py = estatico.pyodide;
+    if (!py) throw new Error("El modelo todavía se está cargando");
+    py.globals.set("_cuerpo", options.body);
+    const r = JSON.parse(py.runPython("_predecir(_cuerpo)"));
+    if (r.error) throw new Error(r.error);
+    return r.ok;
+  }
+  throw new Error(`Ruta no disponible en la demo: ${path}`);
+}
+
+const consultar = (path, options) => (ESTATICO ? apiEstatica(path, options) : api(path, options));
+
 function segmented(options, current, onChange) {
   const wrap = document.createElement("div");
   wrap.className = "segmented";
@@ -137,7 +219,8 @@ function renderResult(r) {
 }
 
 async function init() {
-  const [types, refs] = await Promise.all([api("/api/play-types"), api("/api/referees")]);
+  const fin = ESTATICO ? await iniciarModoEstatico() : null;
+  const [types, refs] = await Promise.all([consultar("/api/play-types"), consultar("/api/referees")]);
   state.types = types;
   state.type = types[0];
   const sel = $("referee");
@@ -157,7 +240,7 @@ async function init() {
     btn.disabled = true;
     try {
       const refereeId = $("referee").value;
-      const r = await api("/api/predict", {
+      const r = await consultar("/api/predict", {
         method: "POST",
         body: JSON.stringify({
           play_type: state.type.key,
@@ -172,6 +255,25 @@ async function init() {
       btn.disabled = false;
     }
   });
+
+  if (fin) await fin();
+}
+
+// Muestra el aviso y "Cargando modelo…", lee los JSON y devuelve la función que
+// termina de cargar Pyodide y restaura el texto y el botón.
+async function iniciarModoEstatico() {
+  $("aviso-demo").hidden = false;
+  const empty = $("empty");
+  const textoOriginal = empty.textContent;
+  const btn = document.querySelector(".primary");
+  empty.textContent = "Cargando modelo…";
+  btn.disabled = true;
+  await cargarDatosEstaticos();
+  return async () => {
+    await cargarPyodide();
+    empty.textContent = textoOriginal;
+    btn.disabled = false;
+  };
 }
 
 init().catch((err) => {

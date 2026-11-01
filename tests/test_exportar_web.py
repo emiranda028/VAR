@@ -101,3 +101,51 @@ def test_no_toca_vargento_db_ni_data(tmp_path, aprobadas):
     antes = huella()
     assert main([str(tmp_path / "out")]) == 0
     assert huella() == antes
+
+
+AVISO = "Versión de demostración: sólo consulta; los datos de demo son sintéticos"
+
+
+def test_exportado_tiene_bandera_aviso_y_pyodide(exportado):
+    html = (exportado / "index.html").read_text(encoding="utf-8")
+    assert "window.VARGENTO_ESTATICO = true" in html
+    assert AVISO in html
+    assert 'id="aviso-demo"' in html
+    js = (exportado / "app.js").read_text(encoding="utf-8")
+    assert "pyodide/v0.26.4/full/pyodide.js" in js
+
+
+def test_aviso_oculto_en_modo_servidor():
+    html = (RAIZ / "vargento" / "static" / "index.html").read_text(encoding="utf-8")
+    assert "VARGENTO_ESTATICO" not in html
+    linea = next(l for l in html.splitlines() if AVISO in l)
+    assert " hidden>" in linea
+
+
+def test_app_js_sin_rutas_absolutas_para_py_ni_datos():
+    js = (RAIZ / "vargento" / "static" / "app.js").read_text(encoding="utf-8")
+    for prefijo in ("py/", "datos/"):
+        for comilla in ('"', "'", "`"):
+            assert f"{comilla}/{prefijo}" not in js, f"ruta absoluta {comilla}/{prefijo}"
+    assert "`py/vargento/" in js and '"datos/history.json"' in js
+
+
+def test_workflow_pages_es_yaml_valido():
+    texto = (RAIZ / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
+    assert "\t" not in texto
+    try:
+        import yaml
+    except ImportError:  # PyYAML no es dependencia: sin él, chequeo mínimo del contenido
+        for clave in ("workflow_dispatch", "id-token: write", "actions/deploy-pages@v4", "_site"):
+            assert clave in texto
+        return
+    wf = yaml.safe_load(texto)
+    disparadores = wf.get("on", wf.get(True))  # PyYAML interpreta `on` como booleano
+    assert disparadores["push"]["branches"] == ["main"] and "workflow_dispatch" in disparadores
+    assert wf["permissions"] == {"contents": "read", "pages": "write", "id-token": "write"}
+    assert wf["concurrency"] == {"group": "pages", "cancel-in-progress": False}
+    pasos = [p.get("run") or p.get("uses") for p in wf["jobs"]["build"]["steps"]]
+    assert pasos.index("python -m pytest -q") < pasos.index("python -m vargento.exportar_web _site")
+    deploy = wf["jobs"]["deploy"]
+    assert deploy["needs"] == "build" and deploy["environment"]["name"] == "github-pages"
+    assert deploy["steps"][0]["uses"] == "actions/deploy-pages@v4" and deploy["steps"][0]["id"] == "deployment"
