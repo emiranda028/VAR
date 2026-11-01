@@ -6,8 +6,12 @@ por eso sólo importa de `.domain`, `.model` y la biblioteca estándar.
 
 from __future__ import annotations
 
-from .domain import get_play_type, validate_features
-from .model import HistoricalPlay, ScoredPlay, predict
+from .domain import PlayType, get_play_type, validate_features
+from .model import REFEREE_BANDWIDTH, HistoricalPlay, ScoredPlay, distance, predict, similarity
+
+# Igual que en importar.py (que no se puede importar acá: no corre en el navegador).
+SEPARADOR_FUENTES = "| Fuentes:"
+MAX_REALES = 5
 
 
 def historia_desde_json(jugadas: list[dict]) -> list[HistoricalPlay]:
@@ -22,9 +26,52 @@ def historia_desde_json(jugadas: list[dict]) -> list[HistoricalPlay]:
             description=j.get("description", ""),
             match=j.get("match", ""),
             date=j.get("date", ""),
+            origen=j.get("origen", "demo"),
+            video=j.get("video"),
         )
         for j in jugadas
     ]
+
+
+def separar_fuentes(description: str) -> tuple[str, list[str]]:
+    """Separa "texto | Fuentes: url1 url2" en el texto y la lista de URLs http(s)."""
+    texto, sep, resto = description.partition(SEPARADOR_FUENTES)
+    if not sep and description.startswith(SEPARADOR_FUENTES[2:]):  # jugada sin texto
+        texto, resto = "", description[len(SEPARADOR_FUENTES) - 2:]
+    fuentes = [u for u in resto.split() if u.startswith(("http://", "https://"))]
+    return texto.strip(" |"), fuentes
+
+
+def _video(video: dict | None) -> dict | None:
+    if not video:
+        return None
+    return {"id": video["url"].rsplit("v=", 1)[-1], "url": video["url"], "inicio": video["inicio"]}
+
+
+def _jugada_real(pt: PlayType, features: dict, p: HistoricalPlay, names: dict[int, str]) -> dict:
+    descripcion, fuentes = separar_fuentes(p.description)
+    return {
+        "id": p.id,
+        "similitud": round(similarity(pt, features, p.features, REFEREE_BANDWIDTH), 3),
+        "match": p.match,
+        "date": p.date,
+        "referee_id": p.referee_id,
+        "referee": names.get(p.referee_id, "?"),
+        "decision_campo": bool(p.features.get("decision_campo")),
+        "called": p.called,
+        "descripcion": descripcion,
+        "fuentes": fuentes,
+        "video": _video(p.video),
+    }
+
+
+def reales_cercanas(
+    pt: PlayType, features: dict, plays: list[HistoricalPlay], names: dict[int, str]
+) -> list[dict]:
+    """Las jugadas reales más cercanas (distancia ascendente, desempate por id), sin umbral."""
+    reales = [p for p in plays if p.origen == "real"]
+    reales.sort(key=lambda p: (distance(pt, features, p.features), p.id))
+    return [_jugada_real(pt, features, p, names) for p in reales[:MAX_REALES]]
 
 
 def _redondear(valor: float | None, digitos: int) -> float | None:
@@ -94,4 +141,10 @@ def respuesta_prediccion(
         },
         "similar_plays": _scored(result.similar, names, 8),
         "referee_similar_plays": _scored(result.referee_similar, names, 5),
+        "jugadas_reales_similares": reales_cercanas(pt, clean, same_type, names),
+        "jugadas_reales_arbitro": (
+            reales_cercanas(pt, clean, [p for p in same_type if p.referee_id == referee_id], names)
+            if referee_id is not None
+            else []
+        ),
     }

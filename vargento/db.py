@@ -152,6 +152,8 @@ class Database:
                 description=r["description"],
                 match=r["match"],
                 date=r["date"],
+                origen=r["origen"],
+                video=json.loads(r["video"]) if r["video"] else None,
             )
             for r in self._conn.execute(sql, args)
         ]

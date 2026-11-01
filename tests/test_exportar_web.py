@@ -23,6 +23,7 @@ LOTE = {
     "description": "Jugada de prueba para el exportador.",
     "fuentes": ["https://example.com/nota"],
     "confianza": "alta",
+    "video": {"url": "https://youtu.be/dQw4w9WgXcQ", "inicio": 7},
 }
 
 
@@ -72,7 +73,11 @@ def test_play_types_y_arbitros(exportado):
     assert all(set(r) == {"id", "name", "country", "plays"} for r in arbitros)
     assert sum(r["plays"] for r in arbitros) == len(history)
     assert any(r["name"] == "Árbitro Exportado" for r in arbitros)  # se cargó el lote aprobado
-    assert set(history[0]) == {"id", "play_type", "referee_id", "features", "called", "description", "match", "date"}
+    assert set(history[0]) == {
+        "id", "play_type", "referee_id", "features", "called", "description", "match", "date", "origen", "video"
+    }
+    exportada = next(h for h in history if h["origen"] == "real")
+    assert exportada["video"] == {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "inicio": 7}
     assert "Árbitro Exportado" in (exportado / "datos" / "referees.json").read_text(encoding="utf-8")
 
 
@@ -89,6 +94,7 @@ def test_equivale_a_la_api(exportado, aprobadas, tmp_path):
                 "/api/predict", json={"play_type": "offside", "referee_id": ref_id, "features": OFFSIDE}
             ).json()
             assert respuesta_prediccion("offside", OFFSIDE, ref_id, history, arbitros) == esperado
+            assert esperado["jugadas_reales_similares"][0]["video"]["id"] == "dQw4w9WgXcQ"
     finally:
         db.close()
 
