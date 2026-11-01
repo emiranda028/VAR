@@ -112,6 +112,27 @@ orden alfabético, incluidas las de confianza baja; las ya cargadas se omiten co
 duplicadas, así que reiniciar no duplica nada. Si un lote falla, se registra un
 aviso y la app arranca igual.
 
+## Evaluar el modelo
+
+Mide qué tan bien predice el modelo las jugadas con `origen = 'real'`:
+
+```bash
+python -m vargento.evaluar                  # demo (seed) + data/aprobadas/, en memoria
+python -m vargento.evaluar --db vargento.db # evalúa una base existente (no la modifica)
+python -m vargento.evaluar --json           # sólo JSON por stdout, floats sin redondear
+```
+
+Muestra, en total y por tipo, acierto (cobrar si P ≥ 50%), log-loss (con la
+probabilidad recortada a [0,001; 0,999]) y tasa de DUDOSA, en dos variantes:
+
+- **Sólo demo**: cada jugada real se predice con el histórico sin ninguna jugada
+  real. Mide cuánto sirven los datos sintéticos para casos reales.
+- **Leave-one-out**: cada jugada real se predice con todo el histórico menos ella
+  misma (incluye las demás reales). Mide cuánto aportan las reales.
+
+Si `--db` no existe, sale con código 2 sin crear el archivo; si no hay jugadas
+reales, sale con código 1.
+
 ## Equipo de IA
 
 El proyecto tiene un equipo de agentes de Claude Code (`.claude/agents/`):
