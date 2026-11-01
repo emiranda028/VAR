@@ -1,0 +1,407 @@
+{
+  "offside_con_arbitro": {
+    "play_type": "offside",
+    "question": "¿Cobrar offside?",
+    "referee": {
+      "id": 1,
+      "name": "Árbitro Demo A",
+      "country": "Argentina"
+    },
+    "probability_call": 0.9685,
+    "probability_no_call": 0.0315,
+    "recommendation": "COBRAR",
+    "confidence": "alta",
+    "components": {
+      "base_rate": 0.5871,
+      "similar_plays_probability": 0.9565,
+      "similar_plays_effective_n": 28.31,
+      "referee_similar_probability": 0.731,
+      "referee_similar_effective_n": 11.1,
+      "peers_similar_probability": 0.6301,
+      "referee_bias_logodds": 0.3349,
+      "referee_adjustment": 0.012,
+      "referee_type_plays": 22,
+      "referee_type_rate": 0.7273
+    },
+    "similar_plays": [
+      {
+        "id": 306,
+        "similarity": 1.0,
+        "called": true,
+        "referee_id": 5,
+        "referee": "Árbitro Demo E",
+        "description": "Posición dudosa: adelantado 12 cm",
+        "match": "Racing vs San Lorenzo",
+        "date": "2025-02-22",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 12.0,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 211,
+        "similarity": 1.0,
+        "called": true,
+        "referee_id": 4,
+        "referee": "Árbitro Demo D",
+        "description": "Posición dudosa: adelantado 12 cm",
+        "match": "Vélez vs Racing",
+        "date": "2023-04-20",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 12.1,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 421,
+        "similarity": 1.0,
+        "called": true,
+        "referee_id": 2,
+        "referee": "Árbitro Demo B",
+        "description": "Posición dudosa: adelantado 12 cm",
+        "match": "Talleres vs Vélez",
+        "date": "2024-09-02",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 11.6,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 299,
+        "similarity": 0.999,
+        "called": true,
+        "referee_id": 1,
+        "referee": "Árbitro Demo A",
+        "description": "Posición dudosa: adelantado 11 cm",
+        "match": "Boca vs River",
+        "date": "2023-07-17",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 11.4,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 657,
+        "similarity": 0.999,
+        "called": true,
+        "referee_id": 7,
+        "referee": "Árbitro Demo G",
+        "description": "Posición dudosa: adelantado 11 cm",
+        "match": "Vélez vs Racing",
+        "date": "2023-01-09",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 11.4,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 71,
+        "similarity": 0.996,
+        "called": true,
+        "referee_id": 6,
+        "referee": "Árbitro Demo F",
+        "description": "Posición dudosa: adelantado 13 cm",
+        "match": "Boca vs Independiente",
+        "date": "2023-04-01",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 13.1,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 645,
+        "similarity": 0.993,
+        "called": true,
+        "referee_id": 8,
+        "referee": "Árbitro Demo H",
+        "description": "Posición dudosa: adelantado 14 cm",
+        "match": "Vélez vs Independiente",
+        "date": "2023-08-26",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 13.5,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 463,
+        "similarity": 0.991,
+        "called": true,
+        "referee_id": 5,
+        "referee": "Árbitro Demo E",
+        "description": "Posición dudosa: adelantado 10 cm",
+        "match": "Racing vs Independiente",
+        "date": "2025-04-29",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 10.2,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      }
+    ],
+    "referee_similar_plays": [
+      {
+        "id": 299,
+        "similarity": 1.0,
+        "called": true,
+        "referee_id": 1,
+        "referee": "Árbitro Demo A",
+        "description": "Posición dudosa: adelantado 11 cm",
+        "match": "Boca vs River",
+        "date": "2023-07-17",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 11.4,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 387,
+        "similarity": 0.999,
+        "called": true,
+        "referee_id": 1,
+        "referee": "Árbitro Demo A",
+        "description": "Posición dudosa: adelantado 14 cm",
+        "match": "San Lorenzo vs River",
+        "date": "2023-02-04",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 14.0,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 776,
+        "similarity": 0.96,
+        "called": true,
+        "referee_id": 1,
+        "referee": "Árbitro Demo A",
+        "description": "Posición dudosa: adelantado 0 cm",
+        "match": "Racing vs Independiente",
+        "date": "2024-12-13",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": 0.4,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 349,
+        "similarity": 0.956,
+        "called": true,
+        "referee_id": 1,
+        "referee": "Árbitro Demo A",
+        "description": "Posición dudosa: habilitado por 0 cm",
+        "match": "Vélez vs Boca",
+        "date": "2025-03-13",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": -0.3,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      },
+      {
+        "id": 561,
+        "similarity": 0.937,
+        "called": false,
+        "referee_id": 1,
+        "referee": "Árbitro Demo A",
+        "description": "Posición dudosa: habilitado por 3 cm",
+        "match": "Vélez vs Independiente",
+        "date": "2024-01-17",
+        "features": {
+          "decision_campo": 0.0,
+          "distancia_cm": -2.7,
+          "interfiere_juego": 1.0,
+          "jugada_deliberada_rival": 0.0
+        }
+      }
+    ]
+  },
+  "penal_sin_arbitro": {
+    "play_type": "penal",
+    "question": "¿Cobrar penal?",
+    "referee": null,
+    "probability_call": 0.7001,
+    "probability_no_call": 0.2999,
+    "recommendation": "COBRAR",
+    "confidence": "media",
+    "components": {
+      "base_rate": 0.4372,
+      "similar_plays_probability": 0.7001,
+      "similar_plays_effective_n": 5.49,
+      "referee_similar_probability": null,
+      "referee_similar_effective_n": 0.0,
+      "peers_similar_probability": null,
+      "referee_bias_logodds": 0.0,
+      "referee_adjustment": 0.0,
+      "referee_type_plays": 0,
+      "referee_type_rate": null
+    },
+    "similar_plays": [
+      {
+        "id": 102,
+        "similarity": 1.0,
+        "called": true,
+        "referee_id": 3,
+        "referee": "Árbitro Demo C",
+        "description": "Contacto moderado en el área",
+        "match": "Estudiantes vs Boca",
+        "date": "2025-03-23",
+        "features": {
+          "decision_campo": 1.0,
+          "intensidad_contacto": 2.0,
+          "toca_pelota_primero": 0.0,
+          "intento_jugar_balon": 1.0,
+          "indicios_simulacion": 0.0,
+          "contacto_dentro_area": 1.0
+        }
+      },
+      {
+        "id": 515,
+        "similarity": 1.0,
+        "called": true,
+        "referee_id": 8,
+        "referee": "Árbitro Demo H",
+        "description": "Contacto moderado en el área",
+        "match": "Independiente vs San Lorenzo",
+        "date": "2024-10-15",
+        "features": {
+          "decision_campo": 1.0,
+          "intensidad_contacto": 2.0,
+          "toca_pelota_primero": 0.0,
+          "intento_jugar_balon": 1.0,
+          "indicios_simulacion": 0.0,
+          "contacto_dentro_area": 1.0
+        }
+      },
+      {
+        "id": 529,
+        "similarity": 1.0,
+        "called": false,
+        "referee_id": 2,
+        "referee": "Árbitro Demo B",
+        "description": "Contacto moderado en el área",
+        "match": "Estudiantes vs Racing",
+        "date": "2023-05-04",
+        "features": {
+          "decision_campo": 1.0,
+          "intensidad_contacto": 2.0,
+          "toca_pelota_primero": 0.0,
+          "intento_jugar_balon": 1.0,
+          "indicios_simulacion": 0.0,
+          "contacto_dentro_area": 1.0
+        }
+      },
+      {
+        "id": 348,
+        "similarity": 0.191,
+        "called": true,
+        "referee_id": 7,
+        "referee": "Árbitro Demo G",
+        "description": "Contacto leve en el área",
+        "match": "Racing vs Boca",
+        "date": "2023-06-07",
+        "features": {
+          "decision_campo": 1.0,
+          "intensidad_contacto": 1.0,
+          "toca_pelota_primero": 0.0,
+          "intento_jugar_balon": 1.0,
+          "indicios_simulacion": 0.0,
+          "contacto_dentro_area": 1.0
+        }
+      },
+      {
+        "id": 364,
+        "similarity": 0.191,
+        "called": true,
+        "referee_id": 4,
+        "referee": "Árbitro Demo D",
+        "description": "Contacto leve en el área",
+        "match": "Vélez vs Independiente",
+        "date": "2023-06-22",
+        "features": {
+          "decision_campo": 1.0,
+          "intensidad_contacto": 1.0,
+          "toca_pelota_primero": 0.0,
+          "intento_jugar_balon": 1.0,
+          "indicios_simulacion": 0.0,
+          "contacto_dentro_area": 1.0
+        }
+      },
+      {
+        "id": 365,
+        "similarity": 0.191,
+        "called": true,
+        "referee_id": 6,
+        "referee": "Árbitro Demo F",
+        "description": "Contacto leve en el área",
+        "match": "Talleres vs Independiente",
+        "date": "2024-04-01",
+        "features": {
+          "decision_campo": 1.0,
+          "intensidad_contacto": 1.0,
+          "toca_pelota_primero": 0.0,
+          "intento_jugar_balon": 1.0,
+          "indicios_simulacion": 0.0,
+          "contacto_dentro_area": 1.0
+        }
+      },
+      {
+        "id": 416,
+        "similarity": 0.191,
+        "called": true,
+        "referee_id": 8,
+        "referee": "Árbitro Demo H",
+        "description": "Contacto leve en el área",
+        "match": "River vs Estudiantes",
+        "date": "2025-02-07",
+        "features": {
+          "decision_campo": 1.0,
+          "intensidad_contacto": 1.0,
+          "toca_pelota_primero": 0.0,
+          "intento_jugar_balon": 1.0,
+          "indicios_simulacion": 0.0,
+          "contacto_dentro_area": 1.0
+        }
+      },
+      {
+        "id": 453,
+        "similarity": 0.191,
+        "called": true,
+        "referee_id": 5,
+        "referee": "Árbitro Demo E",
+        "description": "Contacto leve en el área",
+        "match": "Independiente vs Talleres",
+        "date": "2023-09-04",
+        "features": {
+          "decision_campo": 1.0,
+          "intensidad_contacto": 1.0,
+          "toca_pelota_primero": 0.0,
+          "intento_jugar_balon": 1.0,
+          "indicios_simulacion": 0.0,
+          "contacto_dentro_area": 1.0
+        }
+      }
+    ],
+    "referee_similar_plays": []
+  }
+}
