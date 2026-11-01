@@ -126,3 +126,14 @@ def test_validate_features_accepts_range_limits_and_rejects_beyond():
             for bad in (f.min - 0.01, f.max + 0.01):
                 with pytest.raises(ValueError):
                     validate_features(pt, {**base, f.key: bad})
+
+
+def test_arbitro_es_opcional_en_la_ui():
+    # La opción "(sin árbitro — sólo jugadas similares)" tiene value="": si el
+    # select fuera `required`, el navegador bloquearía el envío en silencio.
+    import re
+    from pathlib import Path
+
+    html = (Path(__file__).parent.parent / "vargento" / "static" / "index.html").read_text(encoding="utf-8")
+    select = re.search(r"<select[^>]*id=\"referee\"[^>]*>", html).group(0)
+    assert "required" not in select
