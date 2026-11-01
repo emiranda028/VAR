@@ -46,6 +46,21 @@ Lectura: con jugadas reales el modelo acierta bastante menos que con las de demo
 Los datos sintéticos no representan bien al VAR real; es la señal más clara hasta ahora
 de que hace falta recalibrar con datos reales cuando haya ~100.
 
+## Lote 3 (cargado)
+
+- 16 jugadas: 12 penales, 1 mano, 3 rojas; 9/16 confianza media.
+- Revisor: APROBADO, 10 de 16 verificadas contra sus fuentes, sin contradicciones en `called` ni `decision_campo`.
+- Sin offside: en la LPF 2024-2025 no se publican medidas de la línea. Hasta que llegue el offside semiautomático, los próximos lotes se enfocan en penales, manos y rojas.
+- Medido con `python -m vargento.evaluar` (41 jugadas reales):
+
+| Variante | Total | Penal | Mano | Roja | Log-loss |
+| --- | --- | --- | --- | --- | --- |
+| Sólo demo | 24/41 (58,5%) | 15/25 | 7/8 | 2/8 | 0,646 |
+| Leave-one-out | 28/41 (68,3%) | 16/25 | 7/8 | 5/8 | 0,607 |
+
+Lectura: los penales reales son el punto débil (60-64%) y las rojas mejoran mucho al sumar datos reales
+(2/8 → 5/8). Las manos ya funcionan bien. Con ~60 jugadas reales conviene recalibrar los parámetros del modelo.
+
 ## Retro (día 7)
 
 - Funcionó: el revisor detectó el bug sembrado y encontró 8 problemas reales en el importador (2 graves: fuentes vacías o con la URL rota).
