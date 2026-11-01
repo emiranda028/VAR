@@ -137,6 +137,33 @@ respeta `VARGENTO_APROBADAS` igual que la app (vacía = sin lotes).
 Si `--db` no existe, sale con código 2 sin crear el archivo; si no hay jugadas
 reales, sale con código 1.
 
+## Demo en GitHub Pages
+
+Demo pública: https://emiranda028.github.io/VAR/
+
+Es la misma interfaz, pero sin servidor: el modelo (`domain.py`, `model.py`,
+`servicio.py`) corre en el navegador con [Pyodide](https://pyodide.org) y los
+datos salen de JSON exportados con `python -m vargento.exportar_web`. El workflow
+`.github/workflows/pages.yml` corre los tests, exporta el sitio y lo publica en
+cada push a `main`.
+
+Limitaciones: es **sólo consulta** y no se registran jugadas (no hay
+`POST /api/plays` ni estadísticas). Incluye las jugadas reales aprobadas de la LPF
+(`data/aprobadas/`, con fuente) junto a los datos de demo **sintéticos**; el aviso
+de la página lo dice: "Versión de demostración: sólo consulta. Incluye jugadas
+reales de la LPF con fuente y datos de demo sintéticos." La primera carga
+baja Pyodide desde jsDelivr y tarda unos segundos ("Cargando modelo…").
+
+Probar local:
+
+```bash
+python -m vargento.exportar_web _site && python -m http.server -d _site
+# abrir http://127.0.0.1:8000
+```
+
+Paso único del dueño para activarla: en GitHub, **Settings → Pages → Source:
+"GitHub Actions"**.
+
 ## Equipo de IA
 
 El proyecto tiene un equipo de agentes de Claude Code (`.claude/agents/`):

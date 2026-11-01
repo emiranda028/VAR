@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .db import Database
 from .domain import PLAY_TYPES, get_play_type, validate_features
-from .model import ScoredPlay, predict
+from .servicio import respuesta_prediccion
 
 STATIC_DIR = Path(__file__).parent / "static"
 APROBADAS_DIR = Path(__file__).parent.parent / "data" / "aprobadas"
@@ -93,22 +93,6 @@ def create_app(
             raise HTTPException(404, f"Árbitro {referee_id} no encontrado")
         return ref
 
-    def _scored(items: list[ScoredPlay], names: dict[int, str], limit: int) -> list[dict]:
-        return [
-            {
-                "id": s.play.id,
-                "similarity": round(s.similarity, 3),
-                "called": s.play.called,
-                "referee_id": s.play.referee_id,
-                "referee": names.get(s.play.referee_id, "?"),
-                "description": s.play.description,
-                "match": s.play.match,
-                "date": s.play.date,
-                "features": s.play.features,
-            }
-            for s in items[:limit]
-        ]
-
     @app.get("/api/play-types")
     def play_types() -> list[dict]:
         return [t.to_dict() for t in PLAY_TYPES.values()]
@@ -144,39 +128,14 @@ def create_app(
 
     @app.post("/api/predict")
     def predict_play(body: PredictIn) -> dict:
-        pt, features = _check(body.play_type, body.features)
-        referee = _referee_or_404(body.referee_id) if body.referee_id is not None else None
-        result = predict(pt, features, body.referee_id, db.history(pt.key))
-        names = {r["id"]: r["name"] for r in db.list_referees()}
-        return {
-            "play_type": pt.key,
-            "question": pt.question,
-            "referee": referee,
-            "probability_call": round(result.probability, 4),
-            "probability_no_call": round(1 - result.probability, 4),
-            "recommendation": result.recommendation,
-            "confidence": result.confidence,
-            "components": {
-                "base_rate": round(result.base_rate, 4),
-                "similar_plays_probability": round(result.general_probability, 4),
-                "similar_plays_effective_n": round(result.effective_similar, 2),
-                "referee_similar_probability": (
-                    round(result.referee_probability, 4) if result.referee_probability is not None else None
-                ),
-                "referee_similar_effective_n": round(result.referee_effective_similar, 2),
-                "peers_similar_probability": (
-                    round(result.peers_probability, 4) if result.peers_probability is not None else None
-                ),
-                "referee_bias_logodds": round(result.referee_bias, 4),
-                "referee_adjustment": round(result.probability - result.general_probability, 4),
-                "referee_type_plays": result.referee_calls,
-                "referee_type_rate": (
-                    round(result.referee_rate, 4) if result.referee_rate is not None else None
-                ),
-            },
-            "similar_plays": _scored(result.similar, names, 8),
-            "referee_similar_plays": _scored(result.referee_similar, names, 5),
-        }
+        try:
+            return respuesta_prediccion(
+                body.play_type, body.features, body.referee_id, db.history(body.play_type), db.list_referees()
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     @app.get("/api/health")
     def health() -> dict:
