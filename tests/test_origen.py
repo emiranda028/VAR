@@ -120,13 +120,24 @@ def test_lotes_aprobados_son_validos(archivo):
 def test_copia_aprobada_es_identica_a_la_candidata():
     candidata = APROBADAS_DIR.parent / "candidatas" / LOTE_1
     assert candidata.exists()
-    assert (APROBADAS_DIR / LOTE_1).read_bytes() == candidata.read_bytes()
+    # La aprobada sólo puede diferir de la candidata en el campo `video`, que se
+    # agrega después de revisar los videos; el resto de cada jugada es idéntico.
+    def sin_video(texto):
+        return [{k: v for k, v in json.loads(l).items() if k != "video"} for l in texto.splitlines() if l.strip()]
+
+    aprobada = (APROBADAS_DIR / LOTE_1).read_text(encoding="utf-8-sig")
+    assert sin_video(aprobada) == sin_video(candidata.read_text(encoding="utf-8-sig"))
 
 
 def test_relanzar_con_video_agrega_el_video_sin_duplicar(tmp_path):
     carpeta = tmp_path / "aprobadas"
     carpeta.mkdir()
-    lineas = (APROBADAS_DIR / LOTE_1).read_text(encoding="utf-8-sig").splitlines()
+    # Se parte del lote sin videos para probar que relanzar agrega uno.
+    lineas = [
+        json.dumps({k: v for k, v in json.loads(l).items() if k != "video"}, ensure_ascii=False)
+        for l in (APROBADAS_DIR / LOTE_1).read_text(encoding="utf-8-sig").splitlines()
+        if l.strip()
+    ]
     (carpeta / LOTE_1).write_text("\n".join(lineas) + "\n", encoding="utf-8")
     db = Database(tmp_path / "t.db")
     create_app(db, seed_demo=False, aprobadas_dir=carpeta)
