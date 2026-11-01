@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS plays (
     description TEXT NOT NULL DEFAULT '',
     match TEXT NOT NULL DEFAULT '',
     date TEXT NOT NULL DEFAULT '',
-    origen TEXT NOT NULL DEFAULT 'demo'
+    origen TEXT NOT NULL DEFAULT 'demo',
+    video TEXT
 );
 CREATE INDEX IF NOT EXISTS plays_type_idx ON plays(play_type);
 CREATE INDEX IF NOT EXISTS plays_referee_idx ON plays(referee_id);
@@ -48,6 +49,7 @@ class Database:
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(SCHEMA)
         self._migrar_origen()
+        self._migrar_video()
 
     def _migrar_origen(self) -> None:
         """Agrega `plays.origen` a bases viejas; las jugadas con fuentes quedan como 'real'."""
@@ -60,6 +62,13 @@ class Database:
             self._conn.execute(
                 "UPDATE plays SET origen = 'real' WHERE origen = 'demo' AND description LIKE '%| Fuentes: http%'"
             )
+
+    def _migrar_video(self) -> None:
+        """Agrega `plays.video` (JSON con url e inicio, o NULL) a bases viejas."""
+        columnas = {r["name"] for r in self._conn.execute("PRAGMA table_info(plays)")}
+        if "video" not in columnas:
+            with self._lock, self._conn:
+                self._conn.execute("ALTER TABLE plays ADD COLUMN video TEXT")
 
     def close(self) -> None:
         self._conn.close()
@@ -143,6 +152,8 @@ class Database:
                 description=r["description"],
                 match=r["match"],
                 date=r["date"],
+                origen=r["origen"],
+                video=json.loads(r["video"]) if r["video"] else None,
             )
             for r in self._conn.execute(sql, args)
         ]
@@ -171,24 +182,42 @@ class Database:
         )
         return [r[0] for r in rows]
 
+    def jugadas_para(self, play_type: str, match: str, date: str) -> list[dict]:
+        """Id, descripción, origen y video de las jugadas con ese tipo, partido y fecha."""
+        rows = self._conn.execute(
+            "SELECT id, description, origen, video FROM plays WHERE play_type = ? AND match = ? AND date = ?",
+            (play_type, match, date),
+        )
+        return [dict(r) for r in rows]
+
+    def actualizar_videos(self, videos: dict[int, str]) -> int:
+        """Guarda el video (JSON) de cada jugada por id; sólo toca jugadas reales."""
+        with self._lock, self._conn:
+            cur = self._conn.executemany(
+                "UPDATE plays SET video = ? WHERE id = ? AND origen = 'real'",
+                [(v, i) for i, v in videos.items()],
+            )
+        return cur.rowcount
+
     def import_plays(self, plays: list[tuple]) -> int:
         """Carga jugadas con el NOMBRE del árbitro, creando los que falten.
 
-        Tuplas (play_type, referee_name, features, called, description, match, date).
-        Todo ocurre en una sola transacción: si algo falla, no queda nada a medias.
+        Tuplas (play_type, referee_name, features, called, description, match, date[, video]),
+        con `video` como JSON o None. Todo ocurre en una sola transacción: si algo
+        falla, no queda nada a medias.
         """
         with self._lock, self._conn:
             ids = {r["name"].casefold(): r["id"] for r in self._conn.execute("SELECT id, name FROM referees")}
             filas = []
-            for t, nombre, f, c, d, m, dt in plays:
+            for t, nombre, f, c, d, m, dt, *video in plays:
                 clave = nombre.strip().casefold()
                 if clave not in ids:
                     cur = self._conn.execute("INSERT INTO referees (name) VALUES (?)", (nombre.strip(),))
                     ids[clave] = cur.lastrowid
-                filas.append((t, ids[clave], json.dumps(f), int(c), d, m, dt))
+                filas.append((t, ids[clave], json.dumps(f), int(c), d, m, dt, video[0] if video else None))
             self._conn.executemany(
-                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date, origen)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, 'real')",
+                "INSERT INTO plays (play_type, referee_id, features, called, description, match, date, origen, video)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 'real', ?)",
                 filas,
             )
         return len(filas)

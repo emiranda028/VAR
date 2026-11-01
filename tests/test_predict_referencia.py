@@ -55,6 +55,14 @@ def client(tmp_path):
     db.close()
 
 
+CLAVES_NUEVAS = {"jugadas_reales_similares", "jugadas_reales_arbitro"}
+
+
 def test_predict_igual_a_referencia(client):
+    """Las claves de la referencia no cambian; sólo se suman las de jugadas reales."""
     esperado = json.loads(REFERENCIA.read_text(encoding="utf-8"))
-    assert respuestas(client) == esperado
+    obtenido = respuestas(client)
+    assert obtenido.keys() == esperado.keys()
+    for nombre, ref in esperado.items():
+        assert set(obtenido[nombre]) - set(ref) == CLAVES_NUEVAS
+        assert {k: obtenido[nombre][k] for k in ref} == ref

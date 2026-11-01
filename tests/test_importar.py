@@ -128,3 +128,81 @@ def test_simulacion_no_crea_la_base_y_cli_robusta(tmp_path, capsys):
     assert not base.exists()
     assert main([str(tmp_path / "no-existe.jsonl"), "--db", str(base)]) == 2
     assert "No se pudo leer" in capsys.readouterr().err
+
+
+ID = "dQw4w9WgXcQ"
+CANONICA = '{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","inicio":30}'
+
+
+def _videos(db: Database) -> list:
+    return [r[0] for r in db._conn.execute("SELECT video FROM plays ORDER BY id")]
+
+
+def test_video_opcional_y_url_canonica(db):
+    lineas = [
+        jugada(),  # sin video
+        jugada(description="Min 40", video=None),
+        jugada(description="Min 50", video={"url": f"https://youtu.be/{ID}", "inicio": 30}),
+        jugada(description="Min 60", video={"url": f"https://m.youtube.com/watch?v={ID}&t=30", "inicio": 30,
+                                            "titulo": "se ignora"}),
+        jugada(description="Min 70", video={"url": f"http://youtube.com/watch?feature=share&v={ID}", "inicio": 30}),
+    ]
+    res = importar(db, lineas, aplicar=True)
+    assert res.errores == [] and res.cargadas == 5
+    assert _videos(db) == [None, None, CANONICA, CANONICA, CANONICA]
+
+
+@pytest.mark.parametrize(
+    "video, motivo",
+    [
+        ({"url": "https://vimeo.com/123456789", "inicio": 0}, "enlace de YouTube"),
+        ({"url": "https://youtu.be/dQw4w9WgXc", "inicio": 0}, "ID de YouTube"),  # 10 caracteres
+        ({"url": "https://www.youtube.com/watch?v=dQw4w9WgX$c", "inicio": 0}, "ID de YouTube"),
+        ({"url": f"https://youtu.be/{ID}", "inicio": -1}, "video.inicio"),
+        ({"url": f"https://youtu.be/{ID}", "inicio": True}, "video.inicio"),
+        ({"url": f"https://youtu.be/{ID}", "inicio": "30"}, "video.inicio"),
+        ({"inicio": 30}, "falta video.url"),
+        ("https://youtu.be/dQw4w9WgXcQ", "objeto con url e inicio"),
+    ],
+)
+def test_video_invalido_va_a_errores(db, video, motivo):
+    res = importar(db, [jugada(video=video)])
+    assert not res.validas and len(res.errores) == 1
+    assert res.errores[0].startswith("línea 1: ") and motivo in res.errores[0]
+
+
+def test_duplicada_con_video_actualiza_sin_cargar(db):
+    importar(db, [jugada()], aplicar=True)
+    con_video = jugada(video={"url": f"https://youtu.be/{ID}", "inicio": 30})
+    simulado = importar(db, [con_video])
+    assert len(simulado.duplicadas) == 1 and len(simulado.videos_actualizados) == 1
+    assert _videos(db) == [None]  # sin aplicar no toca la base
+    res = importar(db, [con_video], aplicar=True)
+    assert len(res.duplicadas) == 1 and res.cargadas == 0 and len(res.videos_actualizados) == 1
+    assert db.count_plays() == 1 and _videos(db) == [CANONICA]
+    # mismo video: no cuenta; sin video: no borra el guardado
+    assert importar(db, [con_video, jugada()], aplicar=True).videos_actualizados == []
+    assert _videos(db) == [CANONICA]
+    # video distinto: se reemplaza
+    otro = jugada(video={"url": f"https://youtu.be/{ID}", "inicio": 45})
+    assert len(importar(db, [otro], aplicar=True).videos_actualizados) == 1
+    assert '"inicio":45' in _videos(db)[0]
+
+
+def test_video_no_se_escribe_en_jugadas_demo(db):
+    ref = db.add_referee("Árbitro Real")["id"]
+    db.add_play("penal", ref, PENAL, True, "Min 34", "A vs B", "2025-08-17", origen="demo")
+    res = importar(db, [jugada(video={"url": f"https://youtu.be/{ID}", "inicio": 0})], aplicar=True)
+    assert len(res.duplicadas) == 1 and res.videos_actualizados == []
+    assert _videos(db) == [None]
+
+
+def test_informe_muestra_videos_actualizados(tmp_path, capsys):
+    archivo = tmp_path / "lote.jsonl"
+    base = str(tmp_path / "cli.db")
+    archivo.write_text(jugada() + "\n", encoding="utf-8")
+    assert main([str(archivo), "--db", base, "--aplicar"]) == 0
+    assert "Videos actualizados: 0" in capsys.readouterr().out
+    archivo.write_text(jugada(video={"url": f"https://youtu.be/{ID}", "inicio": 0}) + "\n", encoding="utf-8")
+    assert main([str(archivo), "--db", base, "--aplicar"]) == 0
+    assert "Videos actualizados: 1" in capsys.readouterr().out

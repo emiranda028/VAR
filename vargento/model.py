@@ -46,6 +46,8 @@ class HistoricalPlay:
     description: str = ""
     match: str = ""
     date: str = ""
+    origen: str = "demo"  # "demo" (sintética) o "real" (con fuente)
+    video: dict | None = None  # {"url", "inicio"} o None
 
 
 @dataclass

@@ -166,26 +166,87 @@ function selectType(key) {
   }
 }
 
-function renderPlays(listId, plays, emptyText) {
-  const ul = $(listId);
-  ul.innerHTML = "";
+// --- Tarjetas de jugadas reales (todo texto de datos va por textContent o atributos) ---
+const ID_YOUTUBE = /^[A-Za-z0-9_-]{11}$/;
+
+function el(tag, className, text) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function urlSegura(href) {
+  try {
+    const u = new URL(href);
+    return u.protocol === "http:" || u.protocol === "https:" ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+function etiquetaCobro(cobro) {
+  return el("span", `tag ${cobro ? "yes" : "no"}`, cobro ? "Cobró" : "No cobró");
+}
+
+function mediaVideo(p) {
+  const v = p.video;
+  const id = v && typeof v.id === "string" && ID_YOUTUBE.test(v.id) ? v.id : null;
+  if (!id) return el("div", "tarjeta-media sin-video", "Video no disponible");
+  const inicio = Number.isInteger(v.inicio) && v.inicio >= 0 ? v.inicio : 0;
+  const media = el("div", "tarjeta-media");
+  const img = el("img");
+  Object.assign(img, { src: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, loading: "lazy" });
+  img.alt = `Miniatura del video de la jugada: ${p.match} (${p.date})`;
+  const play = el("button", "play");
+  play.type = "button";
+  play.setAttribute("aria-label", `Reproducir video de la jugada: ${p.match} (${p.date})`);
+  play.addEventListener("click", () => {
+    const iframe = el("iframe");
+    iframe.src = `https://www.youtube-nocookie.com/embed/${id}?start=${inicio}&autoplay=1`;
+    iframe.title = `Video de la jugada: ${p.match} (${p.date})`;
+    iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+    iframe.allowFullscreen = true;
+    media.replaceChildren(iframe);
+  });
+  media.append(img, play);
+  return media;
+}
+
+function tarjetaReal(p) {
+  const card = el("article", "tarjeta");
+  const cuerpo = el("div", "tarjeta-cuerpo");
+  cuerpo.appendChild(el("div", "meta", [p.match, p.date, p.referee].filter(Boolean).join(" · ")));
+  const decision = el("div", "decision");
+  decision.append("En campo: ", etiquetaCobro(p.decision_campo), " → Final: ", etiquetaCobro(p.called));
+  cuerpo.appendChild(decision);
+  const sim = el("div", "sim", `Similitud ${pct(p.similitud)}`);
+  sim.title = "Qué tan parecida es a la jugada actual";
+  cuerpo.appendChild(sim);
+  if (p.descripcion) cuerpo.appendChild(el("p", "desc", p.descripcion));
+  const urls = (p.fuentes || []).map(urlSegura).filter(Boolean);
+  if (urls.length) {
+    const fuentes = el("div", "fuentes", "Fuentes: ");
+    urls.forEach((u, i) => {
+      const a = el("a", null, u.hostname.replace(/^www\./, ""));
+      Object.assign(a, { href: u.href, target: "_blank", rel: "noopener noreferrer" });
+      if (i) fuentes.append(" · ");
+      fuentes.appendChild(a);
+    });
+    cuerpo.appendChild(fuentes);
+  }
+  card.append(mediaVideo(p), cuerpo);
+  return card;
+}
+
+function renderReales(id, plays, emptyText) {
+  const box = $(id);
+  box.replaceChildren();
   if (!plays.length) {
-    const li = document.createElement("li");
-    li.innerHTML = `<span class="none"></span>`;
-    li.firstChild.textContent = emptyText;
-    ul.appendChild(li);
+    box.appendChild(el("p", "none", emptyText));
     return;
   }
-  for (const p of plays) {
-    const li = document.createElement("li");
-    li.innerHTML = `<span class="tag ${p.called ? "yes" : "no"}">${p.called ? "COBRÓ" : "NO COBRÓ"}</span>
-      <div><div class="desc"></div><div class="meta"></div></div>
-      <span class="sim">${pct(p.similarity)}</span>`;
-    li.querySelector(".desc").textContent = p.description;
-    li.querySelector(".meta").textContent = `${p.referee} · ${p.match} · ${p.date}`;
-    li.querySelector(".sim").title = "Similitud con la jugada actual";
-    ul.appendChild(li);
-  }
+  for (const p of plays) box.appendChild(tarjetaReal(p));
 }
 
 function renderResult(r) {
@@ -214,8 +275,14 @@ function renderResult(r) {
   $("s-adj-d").textContent = adj > 1 ? "más propenso a cobrar" : adj < -1 ? "menos propenso a cobrar" : "sin sesgo relevante";
   $("s-base").textContent = pct(c.base_rate);
 
-  renderPlays("ref-plays", r.referee_similar_plays, "Este árbitro no tiene jugadas parecidas registradas.");
-  renderPlays("similar-plays", r.similar_plays, "No hay jugadas parecidas en el histórico.");
+  renderReales(
+    "ref-plays",
+    r.jugadas_reales_arbitro,
+    r.referee
+      ? "Este árbitro todavía no tiene jugadas reales cargadas de este tipo."
+      : "Elegí un árbitro para ver sus jugadas reales.",
+  );
+  renderReales("similar-plays", r.jugadas_reales_similares, "Todavía no hay jugadas reales cargadas de este tipo.");
 }
 
 async function init() {
